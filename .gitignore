@@ -6,3 +6,7 @@
 *.synctex.gz
 *.blg
 *.pdf
+#IntellijIDEA
+.idea/
+
+
