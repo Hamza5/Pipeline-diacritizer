@@ -4,17 +4,18 @@ Module containing several functions to read and correct several errors in Tashke
 
 import re
 
-# Hexadecimal values taken from https://www.unicode.org/charts/PDF/U0600.pdf
+# Hexadecimal values taken from https://www.unicode.org/charts/
 D_NAMES = ['Fathatan', 'Dammatan', 'Kasratan', 'Fatha', 'Damma', 'Kasra', 'Shadda', 'Sukun']
 NAME2DIACRITIC = dict((name, chr(code)) for name, code in zip(D_NAMES, range(0x064B, 0x0653)))
 DIACRITIC2NAME = dict((code, name) for name, code in NAME2DIACRITIC.items())
 ARABIC_DIACRITICS = frozenset(NAME2DIACRITIC.values())
-ARABIC_LETTERS = frozenset(chr(x) for x in (list(range(0x0621, 0x63B)) + list(range(0x0641, 0x064B))))
+ARABIC_LETTERS = frozenset([chr(x) for x in (list(range(0x0621, 0x63B)) + list(range(0x0641, 0x064B)))] + ['ـ'])
 ARABIC_SYMBOLS = ARABIC_LETTERS | ARABIC_DIACRITICS
-PUNCTUATION = '،؟ـ'+''.join([chr(x) for x in range(0x0021, 0x0030)]+[chr(x) for x in range(0x003A, 0x0040)] +
-                            [chr(x) for x in range(0x005B, 0x0060)]+[chr(x) for x in range(0x007B, 0x007F)])
-WORD_TOKENIZATION_REGEXP = re.compile(r'[\s' + PUNCTUATION + ']+')
-SENTENCE_TOKENIZATION_REGEXP = re.compile(r'[.:\n]')
+XML_TAG = r'(?:<.+>)+'
+SENTENCE_SEPARATORS = '.:؟!'
+DOTS_NO_URL = r'(?<!\w)(['+SENTENCE_SEPARATORS+'])(?!\w)'
+WORD_TOKENIZATION_REGEXP = re.compile('([' + ''.join(ARABIC_SYMBOLS) + ']+)')
+SENTENCE_TOKENIZATION_REGEXP = re.compile(DOTS_NO_URL + '|' + XML_TAG)
 
 
 def clear_diacritics(word):
@@ -76,8 +77,7 @@ def tokenize(sentence):
     :return: list of str, list containing the words.
     """
     assert isinstance(sentence, str)
-    return list(filter(lambda x: x != '' and set(x).issubset(ARABIC_SYMBOLS) or x.isalnum(),
-                       re.split(WORD_TOKENIZATION_REGEXP, sentence)))
+    return list(filter(lambda x: x != '' and x.isprintable(), re.split(WORD_TOKENIZATION_REGEXP, sentence)))
 
 
 def read_text_file(file_path):
@@ -90,6 +90,18 @@ def read_text_file(file_path):
     sentences = []
     with open(file_path, 'rt', encoding='utf-8') as dataset_file:
         for line in dataset_file:
-            new_sentences = [s.strip(' \n') for s in re.split(SENTENCE_TOKENIZATION_REGEXP, line)]
-            sentences.extend([s for s in new_sentences if s != ''])
+            line = line.strip(' \n\t')
+            if line == '' or not line.isprintable():
+                continue
+            fragments = [x.strip(' \t') for x in filter(lambda x: x != '', re.split(SENTENCE_TOKENIZATION_REGEXP, line))]
+            if len(fragments) > 1:
+                for f1, f2 in zip(fragments[:-1], fragments[1:]):
+                    if f2 in SENTENCE_SEPARATORS:
+                        sentences.append(f1+f2)
+                    elif f1 in SENTENCE_SEPARATORS:
+                        continue
+                    else:
+                        sentences.append(f1)
+            else:
+                sentences.extend(fragments)
     return sentences
