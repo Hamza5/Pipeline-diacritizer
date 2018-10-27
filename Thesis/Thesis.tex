@@ -1,0 +1,133 @@
+\documentclass[a4paper,12pt]{report}
+\usepackage[utf8]{inputenc} % Encodage du fichier
+\usepackage[T1]{fontenc} % Encodage des fonts nécessaire pour le Latin
+\usepackage[english]{babel} % Pour changer la langue des mots générés et choisir la bonne mise en page
+\usepackage{lmodern} % Le latin modèrne
+\usepackage[top=2cm, bottom=2cm, left=3cm, right=2cm]{geometry} % Définir les marges de la page
+\usepackage[hidelinks,
+            unicode=true,
+            pdftitle={Automatic Arabic diacritization using deep learning},
+            pdfauthor={Hamza ABBAD}
+            pdfdisplaydoctitle=true]{hyperref} % Pour les liens
+\usepackage{fancyhdr} % Pour le style de la page
+\usepackage[font=it]{caption} % Rendre les titres des tableaux italiques
+\usepackage{microtype} % Pour éviter les underfuls et les overfuls
+\usepackage{graphicx} % Pour les images
+\usepackage{subcaption} % Pour mettre plusieurs images sur la même ligne
+\usepackage{float} % Pour empêcher le déplacement des tableaux et des figures.
+\usepackage{babelbib} % Pour changer la langue dans la bibliographie
+\usepackage{amsmath} % Pour des fonctions mathématiques
+%\usepackage[onelanguage,longend,boxruled,algoruled,linesnumbered,algochapter]{algorithm2e} % Pour les algorithmes
+%\usepackage{listings} % Pour le code source et le contenu d'un fichier
+\usepackage{array}
+
+\graphicspath{ {pictures/} } % Spécifier le répertoire contenant les images
+\DisableLigatures[f]{encoding=*}
+\renewcommand \thechapter{\Roman{chapter}} % Utiliser les numéros romans pour les chapitres
+\captionsetup{labelfont=it,textfont=it,labelsep=period} % Changer le style des légendes
+%\SetAlgoCaptionSeparator{\unskip.} % pour les légendes d'algorithmes
+%\AtBeginDocument{ % Changer les légendes
+%  \renewcommand\tablename{\itshape Tableau}
+%  \renewcommand{\figurename}{\itshape Figure}
+%	% Renommer la table des matières
+%	\renewcommand{\contentsname}{Sommaire}
+%}
+
+
+\date{}
+% Style de l'entête et le pied de la page
+\setlength{\headheight}{16pt}
+\pagestyle{fancy}
+\fancyhead[L]{} % Enlever la section
+\fancyhead[R]{\footnotesize\slshape{\nouppercase{\leftmark}}} % Titre du chapitre en minuscule avec taille 10
+\fancyfoot[C]{}
+\fancyfoot[R]{\thepage} % Déplacer le numéro de la page vers la droite de la page
+
+\fancypagestyle{plain}{
+\renewcommand{\headrulewidth}{0pt}
+\fancyhf{}
+\fancyfoot[R]{\thepage}
+}
+
+% Espace entre les lignes
+\linespread{1.3}
+
+% Paramètres du code
+%\lstset{numbers=left,captionpos=b,frame=single,breaklines,basicstyle=\ttfamily\footnotesize}
+
+% Code pris de https://tex.stackexchange.com/a/95616/109916 et corrigé
+% Début
+\makeatletter
+\newcommand{\emptypage}[1]{
+  \cleardoublepage
+  \begingroup
+  \let\ps@plain\ps@empty
+  \pagestyle{empty}
+  #1
+  \cleardoublepage
+  \endgroup}
+\makeatother
+% Fin
+
+\begin{document}
+
+% \renewcommand{\sfdefault}{phv}
+%\include{Page_de_garde}
+%\emptypage{
+%{
+%\setlength{\parskip}{0.7em plus 0.2em minus 0.2em}
+%\include{Remerciements}
+%}
+%\tableofcontents
+%\listoffigures
+%\listoftables
+%}
+
+\setlength{\parskip}{0.6em plus 0.1em minus 0.1em}
+
+% Changer le style des listes de descriptions
+\let\olddescription\description
+\let\endolddescription\enddescription
+\renewenvironment{description}{
+\let\olditem\item
+\renewcommand\item[2][]{\olditem[\textit{##1}] ##2}
+\begin{olddescription}}
+{\end{olddescription}\ignorespacesafterend}
+
+% Redéfinition des chapitres et sections pour les inclure dans le sommaire
+\makeatletter
+\let\oldchapter\chapter
+\newcommand{\@chapterstar}[1]{\cleardoublepage\phantomsection\addcontentsline{toc}{chapter}{#1}{\oldchapter*{#1}}\markboth{#1}{}}
+\newcommand{\@chapternostar}[1]{{\oldchapter{#1}}}
+\renewcommand{\chapter}{\@ifstar{\@chapterstar}{\@chapternostar}}
+\let\oldsection\section
+\newcommand{\@sectionstar}[1]{\phantomsection\addcontentsline{toc}{section}{#1}{\oldsection*{#1}}}
+\newcommand{\@sectionnostar}[1]{{\oldsection{#1}}}
+\renewcommand\section{\@ifstar{\@sectionstar}{\@sectionnostar}}
+\makeatother
+
+% Mes commandes
+\newcommand{\keyword}[1]{\emph{#1}}
+
+\setcounter{page}{1}
+%\include{Introduction}
+% Changer les captions pour cacher les références dans la table des figures
+%\let\oldcaption\caption
+%\renewcommand{\caption}[2]{\oldcaption[#1]{#1~#2}}
+\include{Chapter1}
+%\include{Chapitre2}
+%\let\caption\oldcaption
+%\include{Chapitre3}
+%\include{Chapitre4}
+%\include{Chapitre5}
+%\include{Conclusion}
+
+\bibliographystyle{babplain}
+\renewcommand\btxauthorcolon{.}
+\emptypage{
+\bibliography{references}
+}
+
+\let\section\oldsection % pour éviter que le résumé soit visible dans le sommaire comme une section
+%\include{Resume}
+\end{document}
