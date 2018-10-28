@@ -29,6 +29,18 @@ def clear_diacritics(text):
     return ''.join([l for l in text if l not in ARABIC_DIACRITICS])
 
 
+def keep_selected_diacritics(text, diacritics):
+    """
+    Remove only the standard diacritics which are not specified.
+    :param text: str, the diacritized text.
+    :param diacritics: set of str, diacritics to be kept.
+    :return: the text without the diacritics that should be removed.
+    """
+    assert isinstance(text, str)
+    assert isinstance(diacritics, set) and diacritics.issubset(ARABIC_DIACRITICS)
+    return ''.join([l for l in text if l not in ARABIC_DIACRITICS - diacritics])
+
+
 def extract_diacritics(text):
     """
     Return the diacritics from the text while keeping their original positions.
