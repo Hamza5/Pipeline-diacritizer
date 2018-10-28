@@ -98,15 +98,17 @@ def tokenize(sentence):
     return list(filter(lambda x: x != '' and x.isprintable(), re.split(WORD_TOKENIZATION_REGEXP, sentence)))
 
 
-def filter_tokenized_sentence(sentence, min_tokens=2, min_word_diac_rate=0.8):
+def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8):
     """
     Accept or void a sentence, and clean the tokens.
     :param sentence: the sentence to be filtered.
-    :param min_tokens: minimum number of tokens that must be left in the cleaned sentence in order to be accepted.
+    :param min_words: minimum number of arabic words that must be left in the cleaned sentence in order to be accepted.
     :param min_word_diac_rate: rate of the diacritized words to the number of arabic words in the sentence.
     :return: list of str, the cleaned tokens or an empty list.
     """
     assert isinstance(sentence, list) and all(isinstance(w, str) for w in sentence)
+    assert min_words >= 0
+    assert min_word_diac_rate >= 0
     new_sentence = []
     if len(sentence) > 0:
         diac_word_count = 0
@@ -121,7 +123,7 @@ def filter_tokenized_sentence(sentence, min_tokens=2, min_word_diac_rate=0.8):
                 token = token.replace('&quot;', '')
             if token != '':
                 new_sentence.append(token)
-        if len(new_sentence) >= min_tokens and arabic_word_count > 0:
+        if arabic_word_count >= min_words:
             if diac_word_count / arabic_word_count > min_word_diac_rate:
                 return new_sentence
     return []
