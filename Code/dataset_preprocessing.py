@@ -3,6 +3,8 @@ Module containing several functions to read and correct several errors in Tashke
 """
 
 import re
+import numpy as np
+
 
 # Hexadecimal values taken from https://www.unicode.org/charts/
 D_NAMES = ['Fathatan', 'Dammatan', 'Kasratan', 'Fatha', 'Damma', 'Kasra', 'Shadda', 'Sukun']
@@ -14,9 +16,14 @@ ARABIC_SYMBOLS = ARABIC_LETTERS | ARABIC_DIACRITICS
 XML_TAG = r'(?:<.+>)+'
 SENTENCE_SEPARATORS = '.:؟!'
 SPACES = ' \t'
+PUNCTUATION = SENTENCE_SEPARATORS + '۩﴿﴾«»؛،ـ' +\
+              ''.join([chr(x) for x in range(0x0021, 0x0030)]+[chr(x) for x in range(0x003A, 0x0040)] +
+                      [chr(x) for x in range(0x005B, 0x0060)]+[chr(x) for x in range(0x007B, 0x007F)])
 DOTS_NO_URL = r'(?<!\w)(['+SENTENCE_SEPARATORS+']+)(?!\w)'
 WORD_TOKENIZATION_REGEXP = re.compile('([' + ''.join(ARABIC_SYMBOLS) + ']+)')
 SENTENCE_TOKENIZATION_REGEXP = re.compile(DOTS_NO_URL + '|' + XML_TAG)
+CHAR2INDEX = dict((l, n) for n, l in enumerate(sorted(ARABIC_LETTERS - {'ـ'})))
+CHAR2INDEX.update(dict((v, k) for k, v in enumerate([' ', 'number', 'punctuation', 'other'], len(CHAR2INDEX))))
 
 
 def clear_diacritics(text):
@@ -131,8 +138,8 @@ def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8):
                 arabic_word_count += 1
                 if word_chars & ARABIC_DIACRITICS != set():
                     diac_word_count += 1
-            if '&quot;' in token:  # HTML garbage
-                token = token.replace('&quot;', '')
+            token = token.replace('ـ', '')  # Remove tatweel
+            token = token.replace('&quot;', '')  # Clean HTML garbage
             if token != '':
                 new_sentence.append(token)
         if arabic_word_count >= min_words:
@@ -167,3 +174,20 @@ def read_text_file(file_path):
             else:
                 sentences.extend(fragments)
     return sentences
+
+
+def text_to_one_hot(text):
+    assert isinstance(text, str) and set(text) & ARABIC_DIACRITICS == set()
+    char_vectors = np.zeros((len(text), len(CHAR2INDEX)))
+    for i in range(len(text)):
+        if text[i] in ARABIC_LETTERS:
+            char_vectors[i, CHAR2INDEX[text[i]]] = 1
+        elif text[i].isnumeric():
+            char_vectors[i, CHAR2INDEX['number']] = 1
+        elif text[i].isspace():
+            char_vectors[i, CHAR2INDEX[' ']] = 1
+        elif text[i] in PUNCTUATION:
+            char_vectors[i, CHAR2INDEX['punctuation']] = 1
+        else:
+            char_vectors[i, CHAR2INDEX['other']] = 1
+    return char_vectors
