@@ -59,8 +59,7 @@ def extract_diacritics(text):
     for i in range(1, len(text)):
         if text[i] in ARABIC_DIACRITICS:
             diacritics.append(text[i])
-        elif text[i - 1] not in ARABIC_DIACRITICS or\
-                text[i - 1] in ARABIC_DIACRITICS and DIACRITIC2NAME[text[i - 1]] == 'Shadda':
+        elif text[i - 1] not in ARABIC_DIACRITICS:
             diacritics.append('')
     if text[-1] not in ARABIC_DIACRITICS:
         diacritics.append('')
