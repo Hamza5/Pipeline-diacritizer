@@ -106,6 +106,16 @@ def fix_double_diacritics_error(diacritized_text):
     return fixed_text
 
 
+def clean_text(text):
+    """
+    Remove the unwanted characters from the text.
+    :param text: str, the unclean text.
+    :return: str, the cleaned text.
+    """
+    assert isinstance(text, str)
+    return text.replace('ـ', '').replace('&quot;', '')  # Clean HTML garbage and tatweel
+
+
 def tokenize(sentence):
     """
     Tokenize a sentence into a list of words.
@@ -137,8 +147,7 @@ def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8):
                 arabic_word_count += 1
                 if word_chars & ARABIC_DIACRITICS != set():
                     diac_word_count += 1
-            token = token.replace('ـ', '')  # Remove tatweel
-            token = token.replace('&quot;', '')  # Clean HTML garbage
+            token = clean_text(token)
             if token != '':
                 new_sentence.append(token)
         if arabic_word_count >= min_words:
@@ -176,10 +185,15 @@ def read_text_file(file_path):
 
 
 def text_to_one_hot(text):
+    """
+    Transform a sentence into a one-hot matrix where the first dimension is the characters and the second is the index.
+    :param text: str, the sentence to be transformed.
+    :return: ndarray, 2D NumPy array representing the new format.
+    """
     assert isinstance(text, str) and set(text) & ARABIC_DIACRITICS == set()
     char_vectors = np.zeros((len(text), len(CHAR2INDEX)))
     for i in range(len(text)):
-        if text[i] in ARABIC_LETTERS:
+        if text[i] in ARABIC_LETTERS - {'ـ'}:
             char_vectors[i, CHAR2INDEX[text[i]]] = 1
         elif text[i].isnumeric():
             char_vectors[i, CHAR2INDEX['number']] = 1
@@ -190,3 +204,18 @@ def text_to_one_hot(text):
         else:
             char_vectors[i, CHAR2INDEX['other']] = 1
     return char_vectors
+
+
+def add_time_steps(one_hot_matrix, time_steps):
+    """
+    Transform a 2D one-hot matrix into a 3D one containing time steps.
+    :param one_hot_matrix: ndarray, the one-hot matrix
+    :param time_steps: int, the number of time steps
+    :return: ndarray, 3D matrix with time steps as a second dimension.
+    """
+    assert isinstance(one_hot_matrix, np.ndarray) and len(one_hot_matrix.shape) == 2
+    assert isinstance(time_steps, int) and time_steps > 0
+    X = np.empty((one_hot_matrix.shape[0], time_steps, one_hot_matrix.shape[1]))
+    for i in range(X.shape[0]):
+        X[i] = np.concatenate((np.zeros((time_steps, one_hot_matrix.shape[1])), one_hot_matrix))[i:i+time_steps]
+    return X
