@@ -19,11 +19,13 @@ SPACES = ' \t'
 PUNCTUATION = SENTENCE_SEPARATORS + '۩﴿﴾«»؛،ـ' +\
               ''.join([chr(x) for x in range(0x0021, 0x0030)]+[chr(x) for x in range(0x003A, 0x0040)] +
                       [chr(x) for x in range(0x005B, 0x0060)]+[chr(x) for x in range(0x007B, 0x007F)])
+DATETIME_REGEXP = re.compile(r'(?:\d+[-/:\s]+)+\d+')
+NUMBER_REGEXP = re.compile(r'\d+(?:\.\d+)?')
 DOTS_NO_URL = r'(?<!\w)(['+SENTENCE_SEPARATORS+']+)(?!\w)'
 WORD_TOKENIZATION_REGEXP = re.compile('([' + ''.join(ARABIC_SYMBOLS) + ']+)')
 SENTENCE_TOKENIZATION_REGEXP = re.compile(DOTS_NO_URL + '|' + XML_TAG)
 CHAR2INDEX = dict((l, n) for n, l in enumerate(sorted(ARABIC_LETTERS - {'ـ'})))
-CHAR2INDEX.update(dict((v, k) for k, v in enumerate([' ', 'number', 'punctuation', 'other'], len(CHAR2INDEX))))
+CHAR2INDEX.update(dict((v, k) for k, v in enumerate([' ', 'number'], len(CHAR2INDEX))))
 
 
 def clear_diacritics(text):
@@ -113,7 +115,8 @@ def clean_text(text):
     :return: str, the cleaned text.
     """
     assert isinstance(text, str)
-    return text.replace('ـ', '').replace('&quot;', '')  # Clean HTML garbage and tatweel
+    # Clean HTML garbage, tatweel, dates, and replace numbers.
+    return NUMBER_REGEXP.sub('0', DATETIME_REGEXP.sub('', text.replace('ـ', '').replace('&quot;', '')))
 
 
 def tokenize(sentence):
@@ -147,7 +150,7 @@ def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8):
                 arabic_word_count += 1
                 if word_chars & ARABIC_DIACRITICS != set():
                     diac_word_count += 1
-            token = clean_text(token)
+            token = token.strip(SPACES+PUNCTUATION)
             if token != '':
                 new_sentence.append(token)
         if arabic_word_count >= min_words:
@@ -166,11 +169,11 @@ def read_text_file(file_path):
     sentences = []
     with open(file_path, 'rt', encoding='utf-8') as dataset_file:
         for line in dataset_file:
-            line = line.strip(SPACES+'\n')
+            line = clean_text(line.strip(SPACES+'\n'))
             if line == '' or not line.isprintable():
                 continue
             fragments = [x.strip(SPACES) for x in
-                         filter(lambda x: x != '', re.split(SENTENCE_TOKENIZATION_REGEXP, line))]
+                         filter(lambda x: x != '', re.split(SENTENCE_TOKENIZATION_REGEXP, line)) if x is not None]
             if len(fragments) > 1:
                 for f1, f2 in zip(fragments[:-1], fragments[1:]):
                     if f2 in SENTENCE_SEPARATORS:
@@ -199,10 +202,6 @@ def text_to_one_hot(text):
             char_vectors[i, CHAR2INDEX['number']] = 1
         elif text[i].isspace():
             char_vectors[i, CHAR2INDEX[' ']] = 1
-        elif text[i] in PUNCTUATION:
-            char_vectors[i, CHAR2INDEX['punctuation']] = 1
-        else:
-            char_vectors[i, CHAR2INDEX['other']] = 1
     return char_vectors
 
 
