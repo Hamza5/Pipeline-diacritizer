@@ -25,7 +25,8 @@ DOTS_NO_URL = r'(?<!\w)(['+SENTENCE_SEPARATORS+']+)(?!\w)'
 WORD_TOKENIZATION_REGEXP = re.compile('([' + ''.join(ARABIC_SYMBOLS) + ']+)')
 SENTENCE_TOKENIZATION_REGEXP = re.compile(DOTS_NO_URL + '|' + XML_TAG)
 CHAR2INDEX = dict((l, n) for n, l in enumerate(sorted(ARABIC_LETTERS - {'ـ'})))
-CHAR2INDEX.update(dict((v, k) for k, v in enumerate([' ', 'number'], len(CHAR2INDEX))))
+CHAR2INDEX.update(dict((v, k) for k, v in enumerate([' ', '0'], len(CHAR2INDEX))))
+INDEX2CHAR = dict((v, k) for k, v in CHAR2INDEX.items())
 
 
 def clear_diacritics(text):
@@ -85,7 +86,8 @@ def merge_diacritics(undiacritized_text, diacritics):
         i += 1
         if diacritics[j] in ARABIC_DIACRITICS:
             sequence.append(diacritics[j])
-            if DIACRITIC2NAME[diacritics[j]] == 'Shadda' and diacritics[j+1] in ARABIC_DIACRITICS:
+            if DIACRITIC2NAME[diacritics[j]] == 'Shadda' and j+1 < len(diacritics) and \
+                    diacritics[j+1] in ARABIC_DIACRITICS - {diacritics[j]}:
                 sequence.append(diacritics[j+1])
                 j += 1
         j += 1
@@ -151,7 +153,7 @@ def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8):
                 if word_chars & ARABIC_DIACRITICS != set():
                     diac_word_count += 1
             token = token.strip(SPACES+PUNCTUATION)
-            if token != '':
+            if token != '' and (set(token).issubset(ARABIC_SYMBOLS) or NUMBER_REGEXP.match(token)):
                 new_sentence.append(token)
         if arabic_word_count >= min_words:
             if diac_word_count / arabic_word_count > min_word_diac_rate:
@@ -199,7 +201,7 @@ def text_to_one_hot(text):
         if text[i] in ARABIC_LETTERS - {'ـ'}:
             char_vectors[i, CHAR2INDEX[text[i]]] = 1
         elif text[i].isnumeric():
-            char_vectors[i, CHAR2INDEX['number']] = 1
+            char_vectors[i, CHAR2INDEX['0']] = 1
         elif text[i].isspace():
             char_vectors[i, CHAR2INDEX[' ']] = 1
     return char_vectors
@@ -213,8 +215,16 @@ def add_time_steps(one_hot_matrix, time_steps):
     :return: ndarray, 3D matrix with time steps as a second dimension.
     """
     assert isinstance(one_hot_matrix, np.ndarray) and len(one_hot_matrix.shape) == 2
-    assert isinstance(time_steps, int) and time_steps > 0
+    assert isinstance(time_steps, int) and time_steps > 1
     X = np.empty((one_hot_matrix.shape[0], time_steps, one_hot_matrix.shape[1]))
+    padded_one_hot = np.concatenate((np.zeros((time_steps-1, one_hot_matrix.shape[1])), one_hot_matrix))
     for i in range(X.shape[0]):
-        X[i] = np.concatenate((np.zeros((time_steps, one_hot_matrix.shape[1])), one_hot_matrix))[i:i+time_steps]
+        X[i] = padded_one_hot[i:i+time_steps]
     return X
+
+
+def input_to_sentence(batch):
+    assert isinstance(batch, np.ndarray) and len(batch.shape) == 3
+    one_hot = batch[:, -1]
+    indices = np.argmax(one_hot, axis=1)
+    return ''.join([INDEX2CHAR[i] for i in indices])
