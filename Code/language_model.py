@@ -5,14 +5,17 @@ import numpy as np
 from random import shuffle, sample
 
 import tensorflow.keras.backend as K
-from tensorflow.keras import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Flatten
+from tensorflow.keras import Model
+from tensorflow.keras.layers import LSTM, Dense, Lambda, Input
 from tensorflow.keras import metrics
 from tensorflow.keras import losses
 
 from dataset_preprocessing import keep_selected_diacritics, NAME2DIACRITIC, clear_diacritics, extract_diacritics, \
     add_time_steps, text_to_one_hot, read_text_file, filter_tokenized_sentence, tokenize, fix_double_diacritics_error, \
-    input_to_sentence, merge_diacritics
+    input_to_sentence, merge_diacritics, CHAR2INDEX
+
+
+TIME_STEPS = 5
 
 
 def generate_shadda_dataset(sentences, context_size):
@@ -60,12 +63,12 @@ def keras_recall(y_true, y_pred):
     return recall
 
 
+def post_corrections(in_out):
+    inputs, predictions = in_out
+    return predictions
+
+
 if __name__ == '__main__':
-    model = Sequential([
-        LSTM(100, dropout=0.9),
-        Flatten(),
-        Dense(1, activation='sigmoid')
-    ])
     file_paths = [
         r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\إتحاف المهرة لابن حجر.txt',
         r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\أحكام القرآن لابن العربي.txt',
@@ -95,10 +98,15 @@ if __name__ == '__main__':
     balancing_factor = total/shadda_count
     print('Balancing factor = {:.5f}'.format(balancing_factor))
     print('Generating train dataset...')
-    train_inputs, train_targets = generate_shadda_dataset(train_sentences, 5)
+    train_inputs, train_targets = generate_shadda_dataset(train_sentences, TIME_STEPS)
     print('Generating test dataset...')
-    test_inputs, test_targets = generate_shadda_dataset(test_sentences, 5)
+    test_inputs, test_targets = generate_shadda_dataset(test_sentences, TIME_STEPS)
     print('Training...')
+    input_layer = Input(shape=(TIME_STEPS, len(CHAR2INDEX)))
+    lstm_layer = LSTM(100, dropout=0.9)(input_layer)
+    dense_layer = Dense(1, activation='sigmoid')(lstm_layer)
+    post_layer = Lambda(post_corrections)([input_layer, dense_layer])
+    model = Model(inputs=input_layer, outputs=post_layer)
     model.compile('rmsprop', losses.binary_crossentropy, [metrics.binary_accuracy, keras_precision, keras_recall])
     for i in range(1, 21):
         print('Iteration', i)
