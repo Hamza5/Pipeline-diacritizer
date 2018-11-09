@@ -63,9 +63,11 @@ def keras_recall(y_true, y_pred):
     return recall
 
 
-def post_corrections(in_out):
+def shadda_post_corrections(in_out):
     inputs, predictions = in_out
-    return predictions
+    last_char = inputs[:, -1]
+    keep_value = K.cast(K.not_equal(K.argmax(last_char, axis=-1), CHAR2INDEX[' ']), 'float32')
+    return K.reshape(keep_value, (-1, 1)) * predictions
 
 
 if __name__ == '__main__':
@@ -105,7 +107,7 @@ if __name__ == '__main__':
     input_layer = Input(shape=(TIME_STEPS, len(CHAR2INDEX)))
     lstm_layer = LSTM(100, dropout=0.9)(input_layer)
     dense_layer = Dense(1, activation='sigmoid')(lstm_layer)
-    post_layer = Lambda(post_corrections)([input_layer, dense_layer])
+    post_layer = Lambda(shadda_post_corrections)([input_layer, dense_layer])
     model = Model(inputs=input_layer, outputs=post_layer)
     model.compile('rmsprop', losses.binary_crossentropy, [metrics.binary_accuracy, keras_precision, keras_recall])
     for i in range(1, 21):
