@@ -9,20 +9,20 @@ from tensorflow.keras import Model
 from tensorflow.keras.layers import LSTM, Dense, Lambda, Input
 from tensorflow.keras import metrics
 from tensorflow.keras import losses
+from tensorflow.keras import utils
 
 from dataset_preprocessing import keep_selected_diacritics, NAME2DIACRITIC, clear_diacritics, extract_diacritics, \
-    add_time_steps, text_to_one_hot, tokenize, input_to_sentence, merge_diacritics, CHAR2INDEX
+    add_time_steps, text_to_indices, tokenize, input_to_sentence, merge_diacritics, CHAR2INDEX
 
 
 TIME_STEPS = 5
 
 
-def generate_shadda_dataset(sentences, context_size):
+def generate_shadda_dataset(sentences):
     """
     Generate a dataset for training on shadda only.
     :param sentences: list of str, the sentences.
-    :param context_size: int, the time steps in the dataset.
-    :return: list of  input matrices and list of target matrices, each element is a batch.
+    :return: list of input matrices and list of target matrices, each element is a batch.
     """
     targets = [keep_selected_diacritics(s, {NAME2DIACRITIC['Shadda']}) for s in sentences if
                NAME2DIACRITIC['Shadda'] in s]
@@ -33,14 +33,13 @@ def generate_shadda_dataset(sentences, context_size):
         only_shadda_labels = extract_diacritics(target)
         target_labels = np.zeros((len(u_target)))
         target_labels[np.array(only_shadda_labels) == NAME2DIACRITIC['Shadda']] = 1
-        input_matrix = add_time_steps(text_to_one_hot(u_target), context_size)
-        input_array.append(input_matrix)
+        input_array.append(text_to_indices(u_target))
         target_array.append(target_labels)
     return input_array, target_array
 
 
 def keras_precision(y_true, y_pred):
-    """Precision metric.	
+    """Precision metric.
     Only computes a batch-wise average of precision. Computes the precision, a
     metric for multi-label classification of how many selected items are
     relevant.
@@ -52,9 +51,9 @@ def keras_precision(y_true, y_pred):
 
 
 def keras_recall(y_true, y_pred):
-    """Recall metric.	
+    """Recall metric.
     Only computes a batch-wise average of recall. Computes the recall, a metric
-    for multi-label classification of how many relevant items are selected.	
+    for multi-label classification of how many relevant items are selected.
     """
     true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
     possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
@@ -112,9 +111,9 @@ if __name__ == '__main__':
     balancing_factor = total/shadda_count
     print('Balancing factor = {:.5f}'.format(balancing_factor))
     print('Generating train dataset...')
-    train_inputs, train_targets = generate_shadda_dataset(train_sentences, TIME_STEPS)
+    train_inputs, train_targets = generate_shadda_dataset(train_sentences)
     print('Generating test dataset...')
-    test_inputs, test_targets = generate_shadda_dataset(test_sentences, TIME_STEPS)
+    test_inputs, test_targets = generate_shadda_dataset(test_sentences)
     print('Training...')
     input_layer = Input(shape=(TIME_STEPS, len(CHAR2INDEX)))
     lstm_layer = LSTM(100)(input_layer)
@@ -129,8 +128,10 @@ if __name__ == '__main__':
         prec = 0
         rec = 0
         for k in range(len(train_targets)):
-            l, a, p, r = model.train_on_batch(train_inputs[k], train_targets[k],
-                                              class_weight={0: 1, 1: balancing_factor})
+            l, a, p, r = model.train_on_batch(
+                add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS),
+                train_targets[k], class_weight={0: 1, 1: balancing_factor}
+            )
             acc += a
             loss += l
             prec += p
@@ -146,7 +147,9 @@ if __name__ == '__main__':
         prec = 0
         rec = 0
         for k in range(len(test_targets)):
-            l, a, p, r = model.test_on_batch(test_inputs[k], test_targets[k])
+            l, a, p, r = model.test_on_batch(
+                add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS), test_targets[k]
+            )
             acc += a
             loss += l
             prec += p
@@ -156,7 +159,8 @@ if __name__ == '__main__':
         )
         print('Test predictions samples:')
         for k in sample(range(len(test_targets)), 10):
-            predicted_indices = model.predict_on_batch(test_inputs[k]) >= 0.5
-            u_text = input_to_sentence(test_inputs[k])
+            test_input = add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS)
+            predicted_indices = model.predict_on_batch(test_input) >= 0.5
+            u_text = input_to_sentence(test_input)
             diacritics = [NAME2DIACRITIC['Shadda'] if c else '' for c in predicted_indices]
             print(merge_diacritics(u_text, diacritics))

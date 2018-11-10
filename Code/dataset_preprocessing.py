@@ -189,21 +189,21 @@ def read_text_file(file_path):
     return sentences
 
 
-def text_to_one_hot(text):
+def text_to_indices(text):
     """
-    Transform a sentence into a one-hot matrix where the first dimension is the characters and the second is the index.
+    Transform a sentence into an indices vector.
     :param text: str, the sentence to be transformed.
-    :return: ndarray, 2D NumPy array representing the new format.
+    :return: ndarray, 1D NumPy array representing the new format.
     """
     assert isinstance(text, str) and set(text) & ARABIC_DIACRITICS == set()
-    char_vectors = np.zeros((len(text), len(CHAR2INDEX)))
+    char_vectors = np.empty((len(text),))
     for i in range(len(text)):
         if text[i] in ARABIC_LETTERS - {'ـ'}:
-            char_vectors[i, CHAR2INDEX[text[i]]] = 1
+            char_vectors[i] = CHAR2INDEX[text[i]]
         elif text[i].isnumeric():
-            char_vectors[i, CHAR2INDEX['0']] = 1
+            char_vectors[i] = CHAR2INDEX['0']
         elif text[i].isspace():
-            char_vectors[i, CHAR2INDEX[' ']] = 1
+            char_vectors[i] = CHAR2INDEX[' ']
     return char_vectors
 
 
