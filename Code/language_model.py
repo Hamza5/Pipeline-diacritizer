@@ -11,8 +11,7 @@ from tensorflow.keras import metrics
 from tensorflow.keras import losses
 
 from dataset_preprocessing import keep_selected_diacritics, NAME2DIACRITIC, clear_diacritics, extract_diacritics, \
-    add_time_steps, text_to_one_hot, read_text_file, filter_tokenized_sentence, tokenize, fix_double_diacritics_error, \
-    input_to_sentence, merge_diacritics, CHAR2INDEX
+    add_time_steps, text_to_one_hot, tokenize, input_to_sentence, merge_diacritics, CHAR2INDEX
 
 
 TIME_STEPS = 5
@@ -20,7 +19,7 @@ TIME_STEPS = 5
 
 def generate_shadda_dataset(sentences, context_size):
     """
-    Generate a dataset for training on shadda only
+    Generate a dataset for training on shadda only.
     :param sentences: list of str, the sentences.
     :param context_size: int, the time steps in the dataset.
     :return: list of  input matrices and list of target matrices, each element is a batch.
@@ -64,13 +63,26 @@ def keras_recall(y_true, y_pred):
 
 
 def shadda_post_corrections(in_out):
+    """
+    Correct any obviously misplaced shadda marks according to the character and its context.
+    :param in_out: input layer and prediction layer outputs.
+    :return: corrected predictions.
+    """
     inputs, predictions = in_out
-    last_char = inputs[:, -1]
-    keep_value = K.cast(K.not_equal(K.argmax(last_char, axis=-1), CHAR2INDEX[' ']), 'float32')
-    return K.reshape(keep_value, (-1, 1)) * predictions
+    forbidden_chars = [CHAR2INDEX[' '], CHAR2INDEX['ا'], CHAR2INDEX['ء'], CHAR2INDEX['أ'], CHAR2INDEX['إ'],
+                       CHAR2INDEX['آ'], CHAR2INDEX['ى'], CHAR2INDEX['ئ'], CHAR2INDEX['ة'], CHAR2INDEX['0']]
+    char_index = K.argmax(inputs[:, -1], axis=-1)
+    allowed_instances = K.cast(K.not_equal(char_index, forbidden_chars[0]), 'float32')
+    for char in forbidden_chars[1:]:
+        allowed_instances *= K.cast(K.not_equal(char_index, char), 'float32')
+    allowed_instances *= K.sum(inputs[:, -2], axis=-1)
+    previous_char_index = K.argmax(inputs[:, -2], axis=-1)
+    allowed_instances *= K.cast(K.not_equal(previous_char_index, CHAR2INDEX[' ']), 'float32')
+    return K.reshape(allowed_instances, (-1, 1)) * predictions
 
 
 if __name__ == '__main__':
+    from dataset_preprocessing import read_text_file, filter_tokenized_sentence, fix_double_diacritics_error
     file_paths = [
         r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\إتحاف المهرة لابن حجر.txt',
         r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\أحكام القرآن لابن العربي.txt',
@@ -105,13 +117,13 @@ if __name__ == '__main__':
     test_inputs, test_targets = generate_shadda_dataset(test_sentences, TIME_STEPS)
     print('Training...')
     input_layer = Input(shape=(TIME_STEPS, len(CHAR2INDEX)))
-    lstm_layer = LSTM(100, dropout=0.9)(input_layer)
+    lstm_layer = LSTM(100)(input_layer)
     dense_layer = Dense(1, activation='sigmoid')(lstm_layer)
     post_layer = Lambda(shadda_post_corrections)([input_layer, dense_layer])
     model = Model(inputs=input_layer, outputs=post_layer)
     model.compile('rmsprop', losses.binary_crossentropy, [metrics.binary_accuracy, keras_precision, keras_recall])
-    for i in range(1, 21):
-        print('Iteration', i)
+    epochs = 20
+    for i in range(1, epochs+1):
         acc = 0
         loss = 0
         prec = 0
@@ -124,11 +136,11 @@ if __name__ == '__main__':
             prec += p
             rec += r
             if k % 1000 == 0:
-                print('Train ({}/{}):'.format(k+1, len(train_targets)))
+                print('{}/{}: Train ({}/{}):'.format(i, epochs, k+1, len(train_targets)))
                 print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
                     loss/(k+1), acc/(k+1), prec/(k+1), rec/(k+1))
                 )
-        print('Test:')
+        print('{}/{}: Test:'.format(i, epochs))
         acc = 0
         loss = 0
         prec = 0
