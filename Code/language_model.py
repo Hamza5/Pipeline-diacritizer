@@ -2,14 +2,24 @@
 Module containing the models used for automatic diacritization.
 """
 import re
+from random import shuffle, sample
 
 import numpy as np
 import tensorflow.keras.backend as K
+from tensorflow.keras import Model
+from tensorflow.keras import losses
+from tensorflow.keras import metrics
+from tensorflow.keras import optimizers
+from tensorflow.keras import utils
+from tensorflow.keras.layers import LSTM, Dense, Lambda, Input
 
 from dataset_preprocessing import keep_selected_diacritics, NAME2DIACRITIC, clear_diacritics, extract_diacritics, \
-    text_to_indices, CHAR2INDEX, ARABIC_DIACRITICS
+    text_to_indices, CHAR2INDEX, ARABIC_DIACRITICS, read_text_file, filter_tokenized_sentence, \
+    fix_double_diacritics_error, add_time_steps, input_to_sentence, tokenize, merge_diacritics
 
 LAST_DIACRITIC_REGEXP = re.compile('['+''.join(ARABIC_DIACRITICS)+r']+(?= |$)')
+TIME_STEPS = 5
+OPTIMIZER = optimizers.RMSprop()
 
 
 def generate_morphological_diacritics_dataset(sentences):
@@ -97,19 +107,70 @@ def shadda_post_corrections(in_out):
     return K.reshape(allowed_instances, (-1, 1)) * predictions
 
 
+def train_shadda_model(train_sentences, test_sentences, epochs=20, show_predictions_count=10):
+    shadda_count = 0
+    total = 0
+    for sentence in train_sentences:
+        total += len(clear_diacritics(sentence))
+        shadda_count += len(list(filter(lambda x: x == NAME2DIACRITIC['Shadda'], sentence)))
+    balancing_factor = total / shadda_count
+    print('Balancing factor = {:.5f}'.format(balancing_factor))
+    print('Generating train dataset...')
+    train_inputs, train_targets = generate_shadda_dataset(train_sentences)
+    print('Generating test dataset...')
+    test_inputs, test_targets = generate_shadda_dataset(test_sentences)
+    print('Training...')
+    input_layer = Input(shape=(TIME_STEPS, len(CHAR2INDEX)))
+    lstm_layer = LSTM(100)(input_layer)
+    dense_layer = Dense(1, activation='sigmoid')(lstm_layer)
+    post_layer = Lambda(shadda_post_corrections)([input_layer, dense_layer])
+    model = Model(inputs=input_layer, outputs=post_layer)
+    model.compile(OPTIMIZER, losses.binary_crossentropy, [metrics.binary_accuracy, keras_precision, keras_recall])
+    for i in range(1, epochs + 1):
+        acc = 0
+        loss = 0
+        prec = 0
+        rec = 0
+        for k in range(len(train_targets)):
+            l, a, p, r = model.train_on_batch(
+                add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS),
+                train_targets[k], class_weight={0: 1, 1: balancing_factor}
+            )
+            acc += a
+            loss += l
+            prec += p
+            rec += r
+            if k % 1000 == 0:
+                print('{}/{}: Train ({}/{}):'.format(i, epochs, k + 1, len(train_targets)))
+                print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
+                    loss / (k + 1), acc / (k + 1), prec / (k + 1), rec / (k + 1))
+                )
+        print('{}/{}: Test:'.format(i, epochs))
+        acc = 0
+        loss = 0
+        prec = 0
+        rec = 0
+        for k in range(len(test_targets)):
+            l, a, p, r = model.test_on_batch(
+                add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS), test_targets[k]
+            )
+            acc += a
+            loss += l
+            prec += p
+            rec += r
+        print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
+            loss / len(test_targets), acc / len(test_targets), prec / len(test_targets), rec / len(test_targets))
+        )
+        print('Test predictions samples:')
+        for k in sample(range(len(test_targets)), show_predictions_count):
+            test_input = add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS)
+            predicted_indices = model.predict_on_batch(test_input) >= 0.5
+            u_text = input_to_sentence(test_input)
+            diacritics = [NAME2DIACRITIC['Shadda'] if c else '' for c in predicted_indices]
+            print(merge_diacritics(u_text, diacritics))
+
+
 if __name__ == '__main__':
-    from random import shuffle, sample
-
-    from tensorflow.keras import Model
-    from tensorflow.keras.layers import LSTM, Dense, Lambda, Input
-    from tensorflow.keras import metrics
-    from tensorflow.keras import losses
-    from tensorflow.keras import utils
-
-    from dataset_preprocessing import read_text_file, filter_tokenized_sentence, fix_double_diacritics_error,\
-        add_time_steps, input_to_sentence, tokenize, merge_diacritics
-
-    TIME_STEPS = 5
 
     file_paths = [
         r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\إتحاف المهرة لابن حجر.txt',
@@ -132,64 +193,4 @@ if __name__ == '__main__':
     test_sentences = sentences[train_size:]
     print('In train =', len(train_sentences))
     print('In test =', len(test_sentences))
-    shadda_count = 0
-    total = 0
-    for sentence in train_sentences:
-        total += len(clear_diacritics(sentence))
-        shadda_count += len(list(filter(lambda x: x == NAME2DIACRITIC['Shadda'], sentence)))
-    balancing_factor = total/shadda_count
-    print('Balancing factor = {:.5f}'.format(balancing_factor))
-    print('Generating train dataset...')
-    train_inputs, train_targets = generate_shadda_dataset(train_sentences)
-    print('Generating test dataset...')
-    test_inputs, test_targets = generate_shadda_dataset(test_sentences)
-    print('Training...')
-    input_layer = Input(shape=(TIME_STEPS, len(CHAR2INDEX)))
-    lstm_layer = LSTM(100)(input_layer)
-    dense_layer = Dense(1, activation='sigmoid')(lstm_layer)
-    post_layer = Lambda(shadda_post_corrections)([input_layer, dense_layer])
-    model = Model(inputs=input_layer, outputs=post_layer)
-    model.compile('rmsprop', losses.binary_crossentropy, [metrics.binary_accuracy, keras_precision, keras_recall])
-    epochs = 20
-    for i in range(1, epochs+1):
-        acc = 0
-        loss = 0
-        prec = 0
-        rec = 0
-        for k in range(len(train_targets)):
-            l, a, p, r = model.train_on_batch(
-                add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS),
-                train_targets[k], class_weight={0: 1, 1: balancing_factor}
-            )
-            acc += a
-            loss += l
-            prec += p
-            rec += r
-            if k % 1000 == 0:
-                print('{}/{}: Train ({}/{}):'.format(i, epochs, k+1, len(train_targets)))
-                print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-                    loss/(k+1), acc/(k+1), prec/(k+1), rec/(k+1))
-                )
-        print('{}/{}: Test:'.format(i, epochs))
-        acc = 0
-        loss = 0
-        prec = 0
-        rec = 0
-        for k in range(len(test_targets)):
-            l, a, p, r = model.test_on_batch(
-                add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS), test_targets[k]
-            )
-            acc += a
-            loss += l
-            prec += p
-            rec += r
-        print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-            loss/len(test_targets), acc/len(test_targets), prec/len(test_targets), rec/len(test_targets))
-        )
-        print('Test predictions samples:')
-        for k in sample(range(len(test_targets)), 10):
-            test_input = add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS)
-            predicted_indices = model.predict_on_batch(test_input) >= 0.5
-            u_text = input_to_sentence(test_input)
-            diacritics = [NAME2DIACRITIC['Shadda'] if c else '' for c in predicted_indices]
-            print(merge_diacritics(u_text, diacritics))
+    train_shadda_model(train_sentences, test_sentences)
