@@ -1,28 +1,45 @@
 """
 Module containing the models used for automatic diacritization.
 """
-import numpy as np
-from random import shuffle, sample
+import re
 
+import numpy as np
 import tensorflow.keras.backend as K
-from tensorflow.keras import Model
-from tensorflow.keras.layers import LSTM, Dense, Lambda, Input
-from tensorflow.keras import metrics
-from tensorflow.keras import losses
-from tensorflow.keras import utils
 
 from dataset_preprocessing import keep_selected_diacritics, NAME2DIACRITIC, clear_diacritics, extract_diacritics, \
-    add_time_steps, text_to_indices, tokenize, input_to_sentence, merge_diacritics, CHAR2INDEX
+    text_to_indices, CHAR2INDEX, ARABIC_DIACRITICS
+
+LAST_DIACRITIC_REGEXP = re.compile('['+''.join(ARABIC_DIACRITICS)+r']+(?= |$)')
 
 
-TIME_STEPS = 5
+def generate_morphological_diacritics_dataset(sentences):
+    """
+    Generate a dataset for training on non ending diacritics only.
+    :param sentences: list of str, the sentences.
+    :return: list of input arrays and list of target arrays, each element is a batch.
+    """
+    harakat = set(NAME2DIACRITIC[x] for x in ('Fatha', 'Damma', 'Kasra', 'Sukun'))
+    targets = [LAST_DIACRITIC_REGEXP.sub('', keep_selected_diacritics(s, harakat)) for s in sentences]
+    input_array = []
+    target_array = []
+    for target in targets:
+        u_target = clear_diacritics(target)
+        harakat_labels = extract_diacritics(target)
+        target_labels = np.zeros((len(u_target)))
+        target_labels[np.array(harakat_labels) == NAME2DIACRITIC['Fatha']] = 1
+        target_labels[np.array(harakat_labels) == NAME2DIACRITIC['Damma']] = 2
+        target_labels[np.array(harakat_labels) == NAME2DIACRITIC['Kasra']] = 3
+        target_labels[np.array(harakat_labels) == NAME2DIACRITIC['Sukun']] = 4
+        input_array.append(text_to_indices(u_target))
+        target_array.append(target_labels)
+    return input_array, target_array
 
 
 def generate_shadda_dataset(sentences):
     """
     Generate a dataset for training on shadda only.
     :param sentences: list of str, the sentences.
-    :return: list of input matrices and list of target matrices, each element is a batch.
+    :return: list of input arrays and list of target arrays, each element is a batch.
     """
     targets = [keep_selected_diacritics(s, {NAME2DIACRITIC['Shadda']}) for s in sentences if
                NAME2DIACRITIC['Shadda'] in s]
@@ -81,7 +98,19 @@ def shadda_post_corrections(in_out):
 
 
 if __name__ == '__main__':
-    from dataset_preprocessing import read_text_file, filter_tokenized_sentence, fix_double_diacritics_error
+    from random import shuffle, sample
+
+    from tensorflow.keras import Model
+    from tensorflow.keras.layers import LSTM, Dense, Lambda, Input
+    from tensorflow.keras import metrics
+    from tensorflow.keras import losses
+    from tensorflow.keras import utils
+
+    from dataset_preprocessing import read_text_file, filter_tokenized_sentence, fix_double_diacritics_error,\
+        add_time_steps, input_to_sentence, tokenize, merge_diacritics
+
+    TIME_STEPS = 5
+
     file_paths = [
         r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\إتحاف المهرة لابن حجر.txt',
         r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\أحكام القرآن لابن العربي.txt',
