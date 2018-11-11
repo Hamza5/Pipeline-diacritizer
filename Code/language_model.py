@@ -11,14 +11,14 @@ from tensorflow.keras import losses
 from tensorflow.keras import metrics
 from tensorflow.keras import optimizers
 from tensorflow.keras import utils
-from tensorflow.keras.layers import LSTM, Dense, Lambda, Input
+from tensorflow.keras.layers import LSTM, Dense, Lambda, Input, Bidirectional
 
 from dataset_preprocessing import keep_selected_diacritics, NAME2DIACRITIC, clear_diacritics, extract_diacritics, \
     text_to_indices, CHAR2INDEX, ARABIC_DIACRITICS, read_text_file, filter_tokenized_sentence, \
     fix_double_diacritics_error, add_time_steps, input_to_sentence, tokenize, merge_diacritics
 
 LAST_DIACRITIC_REGEXP = re.compile('['+''.join(ARABIC_DIACRITICS)+r']+(?= |$)')
-TIME_STEPS = 5
+TIME_STEPS = 7
 OPTIMIZER = optimizers.RMSprop()
 
 
@@ -121,8 +121,9 @@ def train_shadda_model(train_sentences, test_sentences, epochs=20, show_predicti
     test_inputs, test_targets = generate_shadda_dataset(test_sentences)
     print('Training...')
     input_layer = Input(shape=(TIME_STEPS, len(CHAR2INDEX)))
-    lstm_layer = LSTM(100)(input_layer)
-    dense_layer = Dense(1, activation='sigmoid')(lstm_layer)
+    lstm1_layer = Bidirectional(LSTM(100, dropout=0.2, return_sequences=True))(input_layer)
+    lstm2_layer = Bidirectional(LSTM(100, dropout=0.2,))(lstm1_layer)
+    dense_layer = Dense(1, activation='sigmoid')(lstm2_layer)
     post_layer = Lambda(shadda_post_corrections)([input_layer, dense_layer])
     model = Model(inputs=input_layer, outputs=post_layer)
     model.compile(OPTIMIZER, losses.binary_crossentropy, [metrics.binary_accuracy, keras_precision, keras_recall])
@@ -193,4 +194,4 @@ if __name__ == '__main__':
     test_sentences = sentences[train_size:]
     print('In train =', len(train_sentences))
     print('In test =', len(test_sentences))
-    train_shadda_model(train_sentences, test_sentences)
+    train_shadda_model(train_sentences, test_sentences, 10)
