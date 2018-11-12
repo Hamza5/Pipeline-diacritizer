@@ -3,8 +3,8 @@ Module containing several functions to read and correct several errors in Tashke
 """
 
 import re
-import numpy as np
 
+import numpy as np
 
 # Hexadecimal values taken from https://www.unicode.org/charts/
 D_NAMES = ['Fathatan', 'Dammatan', 'Kasratan', 'Fatha', 'Damma', 'Kasra', 'Shadda', 'Sukun']
@@ -13,6 +13,7 @@ DIACRITIC2NAME = dict((code, name) for name, code in NAME2DIACRITIC.items())
 ARABIC_DIACRITICS = frozenset(NAME2DIACRITIC.values())
 ARABIC_LETTERS = frozenset([chr(x) for x in (list(range(0x0621, 0x63B)) + list(range(0x0641, 0x064B)))] + ['ـ'])
 ARABIC_SYMBOLS = ARABIC_LETTERS | ARABIC_DIACRITICS
+EXTRA_SUKUN_REGEXP = re.compile(r'(?<=ال)' + NAME2DIACRITIC['Sukun'])
 XML_TAG = r'(?:<.+>)+'
 SENTENCE_SEPARATORS = '.:؟!'
 SPACES = ' \t'
@@ -117,6 +118,7 @@ def clean_text(text):
     :return: str, the cleaned text.
     """
     assert isinstance(text, str)
+    text = EXTRA_SUKUN_REGEXP.sub('', text)
     # Clean HTML garbage, tatweel, dates, and replace numbers.
     return NUMBER_REGEXP.sub('0', DATETIME_REGEXP.sub('', text.replace('ـ', '').replace('&quot;', '')))
 
