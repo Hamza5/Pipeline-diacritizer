@@ -95,6 +95,7 @@ def shadda_post_corrections(in_out):
     :return: corrected predictions.
     """
     inputs, predictions = in_out
+    # Drop the shadda from the forbidden letters
     forbidden_chars = [CHAR2INDEX[' '], CHAR2INDEX['ا'], CHAR2INDEX['ء'], CHAR2INDEX['أ'], CHAR2INDEX['إ'],
                        CHAR2INDEX['آ'], CHAR2INDEX['ى'], CHAR2INDEX['ئ'], CHAR2INDEX['ة'], CHAR2INDEX['0']]
     char_index = K.argmax(inputs[:, -1], axis=-1)
@@ -102,6 +103,7 @@ def shadda_post_corrections(in_out):
     for char in forbidden_chars[1:]:
         allowed_instances *= K.cast(K.not_equal(char_index, char), 'float32')
     allowed_instances *= K.sum(inputs[:, -2], axis=-1)
+    # Drop the shadda from the letter following the space
     previous_char_index = K.argmax(inputs[:, -2], axis=-1)
     allowed_instances *= K.cast(K.not_equal(previous_char_index, CHAR2INDEX[' ']), 'float32')
     return K.reshape(allowed_instances, (-1, 1)) * predictions
@@ -178,7 +180,13 @@ def morphological_diacritics_post_corrections(in_out):
     :return: corrected predictions.
     """
     inputs, predictions = in_out
-    return predictions
+    forbidden_chars = [CHAR2INDEX[' '], CHAR2INDEX['آ'], CHAR2INDEX['ى'], CHAR2INDEX['0']]
+    char_index = K.argmax(inputs[:, -1], axis=-1)
+    mask_indices = K.cast(K.not_equal(char_index, forbidden_chars[0]), 'float32')
+    for char_code in forbidden_chars[1:]:
+        mask_indices *= K.cast(K.not_equal(char_index, char_code), 'float32')
+    mask_indices = K.reshape(mask_indices, (-1, 1))
+    return mask_indices * predictions + (1 - mask_indices) * K.one_hot(0, K.int_shape(predictions)[-1])
 
 
 def train_morphological_diacritics_model(train_sentences, test_sentences, epochs=20, show_predictions_count=10):
