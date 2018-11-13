@@ -196,6 +196,10 @@ def morphological_diacritics_post_corrections(in_out):
                       K.cast(K.equal(prev_char_index[1:], CHAR2INDEX[' ']), 'float32'), 0, 1)
         mask = K.reshape(K.concatenate([mask, K.ones((1,))], axis=0), (-1, 1))
         predictions = predictions * mask + (1 - mask) * K.one_hot(f_diac, K.int_shape(predictions)[-1])
+    # Drop the last diacritic of every word
+    mask = K.reshape(K.concatenate([K.cast(K.not_equal(char_index[1:], CHAR2INDEX[' ']), 'float32'), K.zeros((1,))],
+                                   axis=0), (-1, 1))
+    predictions = mask * predictions + (1 - mask) * K.one_hot(0, K.int_shape(predictions)[-1])
     return predictions
 
 
