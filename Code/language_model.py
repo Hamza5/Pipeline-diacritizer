@@ -205,6 +205,10 @@ def morphological_diacritics_post_corrections(in_out):
     mask = K.reshape(K.concatenate([K.cast(K.not_equal(char_index[1:], CHAR2INDEX[' ']), 'float32'), K.zeros((1,))],
                                    axis=0), (-1, 1))
     predictions = mask * predictions + (1 - mask) * K.one_hot(0, K.int_shape(predictions)[-1])
+    # Force no sukun at the beginning of the word
+    mask = K.reshape(K.concatenate([K.zeros((1,)), K.cast(K.not_equal(prev_char_index[1:], CHAR2INDEX[' ']), 'float32')]
+                                   , axis=0), (-1, 1))
+    predictions = mask * predictions + (1 - mask) * K.constant([1, 1, 1, 1, 0], shape=(1, 5)) * predictions
     return predictions
 
 
