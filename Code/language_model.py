@@ -18,8 +18,8 @@ from dataset_preprocessing import keep_selected_diacritics, NAME2DIACRITIC, clea
     fix_double_diacritics_error, add_time_steps, input_to_sentence, tokenize, merge_diacritics
 
 LAST_DIACRITIC_REGEXP = re.compile('['+''.join(ARABIC_DIACRITICS)+r']+(?= |$)')
-TIME_STEPS = 7
-OPTIMIZER = optimizers.RMSprop()
+TIME_STEPS = 10
+OPTIMIZER = optimizers.Adam()
 
 
 def generate_morphological_diacritics_dataset(sentences):
@@ -51,8 +51,7 @@ def generate_shadda_dataset(sentences):
     :param sentences: list of str, the sentences.
     :return: list of input arrays and list of target arrays, each element is a batch.
     """
-    targets = [keep_selected_diacritics(s, {NAME2DIACRITIC['Shadda']}) for s in sentences if
-               NAME2DIACRITIC['Shadda'] in s]
+    targets = [keep_selected_diacritics(s, {NAME2DIACRITIC['Shadda']}) for s in sentences]
     input_array = []
     target_array = []
     for target in targets:
@@ -123,8 +122,8 @@ def train_shadda_model(train_sentences, test_sentences, epochs=20, show_predicti
     test_inputs, test_targets = generate_shadda_dataset(test_sentences)
     print('Training...')
     input_layer = Input(shape=(TIME_STEPS, len(CHAR2INDEX)))
-    lstm1_layer = Bidirectional(LSTM(100, dropout=0.2, return_sequences=True))(input_layer)
-    lstm2_layer = Bidirectional(LSTM(100, dropout=0.2))(lstm1_layer)
+    lstm1_layer = Bidirectional(LSTM(128, dropout=0.1, return_sequences=True))(input_layer)
+    lstm2_layer = Bidirectional(LSTM(128, dropout=0.1))(lstm1_layer)
     dense_layer = Dense(1, activation='sigmoid')(lstm2_layer)
     post_layer = Lambda(shadda_post_corrections)([input_layer, dense_layer])
     model = Model(inputs=input_layer, outputs=post_layer)
@@ -232,8 +231,8 @@ def train_morphological_diacritics_model(train_sentences, test_sentences, epochs
     test_inputs, test_targets = generate_morphological_diacritics_dataset(test_sentences)
     print('Training...')
     input_layer = Input(shape=(TIME_STEPS, len(CHAR2INDEX)))
-    lstm1_layer = Bidirectional(LSTM(100, dropout=0.2, return_sequences=True))(input_layer)
-    lstm2_layer = Bidirectional(LSTM(100, dropout=0.2))(lstm1_layer)
+    lstm1_layer = Bidirectional(LSTM(128, dropout=0.1, return_sequences=True))(input_layer)
+    lstm2_layer = Bidirectional(LSTM(128, dropout=0.1))(lstm1_layer)
     dense_layer = Dense(len(b_factors), activation='softmax')(lstm2_layer)
     post_layer = Lambda(morphological_diacritics_post_corrections)([input_layer, dense_layer])
     model = Model(inputs=input_layer, outputs=post_layer)
