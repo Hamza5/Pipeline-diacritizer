@@ -237,8 +237,20 @@ def add_time_steps(one_hot_matrix, time_steps, word_level=False):
     return X
 
 
-def input_to_sentence(batch):
+def input_to_sentence(batch, word_level=False):
     assert isinstance(batch, np.ndarray) and len(batch.shape) == 3
-    one_hot = batch[:, -1]
-    indices = np.argmax(one_hot, axis=1)
-    return ''.join([INDEX2CHAR[i] for i in indices])
+    assert isinstance(word_level, bool)
+    if not word_level:
+        one_hot = batch[:, -1]
+        indices = np.argmax(one_hot, axis=1)
+        return ''.join([INDEX2CHAR[i] for i in indices])
+    else:
+        sentence = ''
+        for row in batch:
+            word = []
+            i = row.shape[0]-1
+            while i > -1 and np.any(row[i]) and np.argmax(row[i]) != CHAR2INDEX[' ']:
+                word.append(INDEX2CHAR[np.argmax(row[i])])
+                i -= 1
+            sentence += ''.join(reversed(word)) + ' '
+        return sentence[:-1]
