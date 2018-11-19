@@ -209,19 +209,31 @@ def text_to_indices(text):
     return char_vectors
 
 
-def add_time_steps(one_hot_matrix, time_steps):
+def add_time_steps(one_hot_matrix, time_steps, word_level=False):
     """
     Transform a 2D one-hot matrix into a 3D one containing time steps.
     :param one_hot_matrix: ndarray, the one-hot matrix
     :param time_steps: int, the number of time steps
+    :param word_level: bool, if True then each instance will represent a word.
     :return: ndarray, 3D matrix with time steps as a second dimension.
     """
     assert isinstance(one_hot_matrix, np.ndarray) and len(one_hot_matrix.shape) == 2
     assert isinstance(time_steps, int) and time_steps > 1
-    X = np.empty((one_hot_matrix.shape[0], time_steps, one_hot_matrix.shape[1]))
-    padded_one_hot = np.concatenate((np.zeros((time_steps-1, one_hot_matrix.shape[1])), one_hot_matrix))
-    for i in range(X.shape[0]):
-        X[i] = padded_one_hot[i:i+time_steps]
+    assert isinstance(word_level, bool)
+    space_indices = np.concatenate((np.flatnonzero(np.argmax(one_hot_matrix, axis=1) == CHAR2INDEX[' ']),
+                                    np.array(one_hot_matrix.shape[0:1])))
+    X = np.empty((
+        one_hot_matrix.shape[0] if not word_level else space_indices.shape[0], time_steps, one_hot_matrix.shape[1]
+    ))
+    offset = time_steps - 1 if not word_level else time_steps - space_indices[0]
+    padded_one_hot = np.concatenate((np.zeros((offset, one_hot_matrix.shape[1])), one_hot_matrix))
+    if not word_level:
+        for i in range(X.shape[0]):
+            X[i] = padded_one_hot[i:i+time_steps]
+    else:
+        space_indices += offset
+        for i in range(X.shape[0]):
+            X[i] = padded_one_hot[space_indices[i]-time_steps:space_indices[i]]
     return X
 
 
