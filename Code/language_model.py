@@ -332,6 +332,13 @@ def last_diacritics_post_corrections(in_out):
     :return: corrected predictions.
     """
     inputs, predictions = in_out
+    last_letter_index = K.argmax(inputs[:, -1], axis=-1)
+    # Only Fathatan or Fatha for the last alef.
+    mask = K.reshape(K.cast(K.not_equal(last_letter_index, CHAR2INDEX['ا']), 'float32'), (-1, 1))
+    predictions = mask * predictions + (1 - mask) * K.constant([0, 1, 0, 0, 0, 1, 0, 0], shape=(1, 8)) * predictions
+    # Nothing for alef maqsura
+    mask = K.reshape(K.cast(K.not_equal(last_letter_index, CHAR2INDEX['ى']), 'float32'), (-1, 1))
+    predictions = mask * predictions + (1 - mask) * K.constant([1, 0, 0, 0, 0, 0, 0, 0], shape=(1, 8))
     return predictions
 
 
@@ -397,20 +404,32 @@ def train_last_diacritics_model(train_sentences, test_sentences, epochs=20, show
         for k in sample(range(len(test_targets)), show_predictions_count):
             test_input = add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS)
             predicted_indices = np.argmax(model.predict_on_batch(test_input), axis=-1)
-            diacritics = np.empty((predicted_indices.shape[0],), dtype=str)
-            diacritics[predicted_indices == 0] = ''
-            diacritics[predicted_indices == 1] = NAME2DIACRITIC['Fatha']
-            diacritics[predicted_indices == 2] = NAME2DIACRITIC['Damma']
-            diacritics[predicted_indices == 3] = NAME2DIACRITIC['Kasra']
-            diacritics[predicted_indices == 4] = NAME2DIACRITIC['Sukun']
-            diacritics[predicted_indices == 5] = NAME2DIACRITIC['Fathatan']
-            diacritics[predicted_indices == 6] = NAME2DIACRITIC['Dammatan']
-            diacritics[predicted_indices == 7] = NAME2DIACRITIC['Kasratan']
+            p_diacritics = np.empty((predicted_indices.shape[0],), dtype=str)
+            r_diacritics = np.empty(test_targets[k].shape, dtype=str)
+            p_diacritics[predicted_indices == 0] = ''
+            p_diacritics[predicted_indices == 1] = NAME2DIACRITIC['Fatha']
+            p_diacritics[predicted_indices == 2] = NAME2DIACRITIC['Damma']
+            p_diacritics[predicted_indices == 3] = NAME2DIACRITIC['Kasra']
+            p_diacritics[predicted_indices == 4] = NAME2DIACRITIC['Sukun']
+            p_diacritics[predicted_indices == 5] = NAME2DIACRITIC['Fathatan']
+            p_diacritics[predicted_indices == 6] = NAME2DIACRITIC['Dammatan']
+            p_diacritics[predicted_indices == 7] = NAME2DIACRITIC['Kasratan']
+            r_diacritics[test_targets[k] == 0] = ''
+            r_diacritics[test_targets[k] == 1] = NAME2DIACRITIC['Fatha']
+            r_diacritics[test_targets[k] == 2] = NAME2DIACRITIC['Damma']
+            r_diacritics[test_targets[k] == 3] = NAME2DIACRITIC['Kasra']
+            r_diacritics[test_targets[k] == 4] = NAME2DIACRITIC['Sukun']
+            r_diacritics[test_targets[k] == 5] = NAME2DIACRITIC['Fathatan']
+            r_diacritics[test_targets[k] == 6] = NAME2DIACRITIC['Dammatan']
+            r_diacritics[test_targets[k] == 7] = NAME2DIACRITIC['Kasratan']
             u_text = input_to_sentence(test_input)
-            diacritized_sentence = ''
-            for word, diacritic in zip(u_text.split(), diacritics):
-                diacritized_sentence += word + diacritic + ' '
-            print(diacritized_sentence[:-1])
+            p_diacritized_sentence = ''
+            r_diacritized_sentence = ''
+            for word, p_diacritic, r_diacritic in zip(u_text.split(), p_diacritics, r_diacritics):
+                p_diacritized_sentence += word + p_diacritic + ' '
+                r_diacritized_sentence += word + r_diacritic + ' '
+            print(p_diacritized_sentence[:-1])
+            print(r_diacritized_sentence[:-1])
 
 
 if __name__ == '__main__':
