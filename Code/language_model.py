@@ -72,8 +72,13 @@ def generate_last_diacritics_dataset(sentences):
                     target.append(6)
                 elif word[-1] == NAME2DIACRITIC['Kasratan']:
                     target.append(7)
-            elif word[-1] == 'ا' and len(word) > 1 and word[-2] == NAME2DIACRITIC['Fathatan']:
-                target.append(5)
+            elif word[-1] == 'ا':
+                if len(word) > 1 and word[-2] == NAME2DIACRITIC['Fathatan']:
+                    target.append(5)
+                elif len(word) > 1 and word[-2] == NAME2DIACRITIC['Fatha']:
+                    target.append(1)
+                else:
+                    target.append(0)
             else:
                 target.append(0)
             input.append(np.array([CHAR2INDEX[x] for x in clear_diacritics(word) + ' ']))
