@@ -175,35 +175,39 @@ def train_shadda_model(train_sentences, test_sentences, epochs=20, show_predicti
         loss = 0
         prec = 0
         rec = 0
+        sum_factors = 0
         for k in range(len(train_targets)):
             l, a, p, r = model.train_on_batch(
                 add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS),
                 train_targets[k], class_weight={0: 1, 1: balancing_factor}
             )
-            acc += a
-            loss += l
-            prec += p
-            rec += r
+            acc += a * train_targets[k].shape[0]
+            loss += l * train_targets[k].shape[0]
+            prec += p * train_targets[k].shape[0]
+            rec += r * train_targets[k].shape[0]
+            sum_factors += train_targets[k].shape[0]
             if k % 1000 == 0:
                 print('{}/{}: Train ({}/{}):'.format(i, epochs, k + 1, len(train_targets)))
                 print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-                    loss / (k + 1), acc / (k + 1), prec / (k + 1), rec / (k + 1))
+                    loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
                 )
         print('{}/{}: Test:'.format(i, epochs))
         acc = 0
         loss = 0
         prec = 0
         rec = 0
+        sum_factors = 0
         for k in range(len(test_targets)):
             l, a, p, r = model.test_on_batch(
                 add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS), test_targets[k]
             )
-            acc += a
-            loss += l
-            prec += p
-            rec += r
+            acc += a * test_targets[k].shape[0]
+            loss += l * test_targets[k].shape[0]
+            prec += p * test_targets[k].shape[0]
+            rec += r * test_targets[k].shape[0]
+            sum_factors += test_targets[k].shape[0]
         print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-            loss / len(test_targets), acc / len(test_targets), prec / len(test_targets), rec / len(test_targets))
+            loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
         )
         print('Test predictions samples:')
         for k in sample(range(len(test_targets)), show_predictions_count):
@@ -285,36 +289,40 @@ def train_morphological_diacritics_model(train_sentences, test_sentences, epochs
         loss = 0
         prec = 0
         rec = 0
+        sum_factors = 0
         for k in range(len(train_targets)):
             l, a, p, r = model.train_on_batch(
                 add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS),
                 utils.to_categorical(train_targets[k], len(b_factors)), class_weight=dict(enumerate(b_factors))
             )
-            acc += a
-            loss += l
-            prec += p
-            rec += r
+            acc += a * train_targets[k].shape[0]
+            loss += l * train_targets[k].shape[0]
+            prec += p * train_targets[k].shape[0]
+            rec += r * train_targets[k].shape[0]
+            sum_factors += train_targets[k].shape[0]
             if k % 1000 == 0:
                 print('{}/{}: Train ({}/{}):'.format(i, epochs, k + 1, len(train_targets)))
                 print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-                    loss / (k + 1), acc / (k + 1), prec / (k + 1), rec / (k + 1))
+                    loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
                 )
         print('{}/{}: Test:'.format(i, epochs))
         acc = 0
         loss = 0
         prec = 0
         rec = 0
+        sum_factors = 0
         for k in range(len(test_targets)):
             l, a, p, r = model.test_on_batch(
                 add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS),
                 utils.to_categorical(test_targets[k], len(b_factors))
             )
-            acc += a
-            loss += l
-            prec += p
-            rec += r
+            acc += a * test_targets[k].shape[0]
+            loss += l * test_targets[k].shape[0]
+            prec += p * test_targets[k].shape[0]
+            rec += r * test_targets[k].shape[0]
+            sum_factors += test_targets[k].shape[0]
         print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-            loss / len(test_targets), acc / len(test_targets), prec / len(test_targets), rec / len(test_targets))
+            loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
         )
         print('Test predictions samples:')
         for k in sample(range(len(test_targets)), show_predictions_count):
@@ -374,36 +382,40 @@ def train_last_diacritics_model(train_sentences, test_sentences, epochs=20, show
         loss = 0
         prec = 0
         rec = 0
+        sum_factors = 0
         for k in range(len(train_targets)):
             l, a, p, r = model.train_on_batch(
                 add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS, word_level=True),
                 utils.to_categorical(train_targets[k], len(b_factors)), class_weight=dict(enumerate(b_factors))
             )
-            acc += a
-            loss += l
-            prec += p
-            rec += r
+            acc += a * train_targets[k].shape[0]
+            loss += l * train_targets[k].shape[0]
+            prec += p * train_targets[k].shape[0]
+            rec += r * train_targets[k].shape[0]
+            sum_factors += train_targets[k].shape[0]
             if k % 1000 == 0:
                 print('{}/{}: Train ({}/{}):'.format(i, epochs, k + 1, len(train_targets)))
                 print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-                    loss / (k + 1), acc / (k + 1), prec / (k + 1), rec / (k + 1))
+                    loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
                 )
         print('{}/{}: Test:'.format(i, epochs))
         acc = 0
         loss = 0
         prec = 0
         rec = 0
+        sum_factors = 0
         for k in range(len(test_targets)):
             l, a, p, r = model.test_on_batch(
                 add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS, word_level=True),
                 utils.to_categorical(test_targets[k], len(b_factors))
             )
-            acc += a
-            loss += l
-            prec += p
-            rec += r
+            acc += a * test_targets[k].shape[0]
+            loss += l * test_targets[k].shape[0]
+            prec += p * test_targets[k].shape[0]
+            rec += r * test_targets[k].shape[0]
+            sum_factors += test_targets[k].shape[0]
         print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-            loss / len(test_targets), acc / len(test_targets), prec / len(test_targets), rec / len(test_targets))
+            loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
         )
         print('Test predictions samples:')
         for k in sample(range(len(test_targets)), show_predictions_count):
@@ -462,4 +474,4 @@ if __name__ == '__main__':
     print('In test =', len(test_sentences))
     # train_shadda_model(train_sentences, test_sentences, 10, 20)
     # train_morphological_diacritics_model(train_sentences, test_sentences, 10, 20)
-    train_last_diacritics_model(train_sentences, test_sentences, 10)
+    train_last_diacritics_model(train_sentences, test_sentences, 10, 20)
