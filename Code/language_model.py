@@ -349,7 +349,7 @@ def last_diacritics_post_corrections(in_out):
     last_letter_index = K.argmax(inputs[:, -1], axis=-1)
     # Only Fathatan or Fatha for the last alef.
     mask = K.reshape(K.cast(K.not_equal(last_letter_index, CHAR2INDEX['ا']), 'float32'), (-1, 1))
-    predictions = mask * predictions + (1 - mask) * K.constant([0, 1, 0, 0, 0, 1, 0, 0], shape=(1, 8)) * predictions
+    predictions = mask * predictions + (1 - mask) * K.constant([1, 1, 0, 0, 0, 1, 0, 0], shape=(1, 8)) * predictions
     # Nothing for alef maqsura
     mask = K.reshape(K.cast(K.not_equal(last_letter_index, CHAR2INDEX['ى']), 'float32'), (-1, 1))
     predictions = mask * predictions + (1 - mask) * K.constant([1, 0, 0, 0, 0, 0, 0, 0], shape=(1, 8))
