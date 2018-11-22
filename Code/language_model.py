@@ -240,12 +240,12 @@ def morphological_diacritics_post_corrections(in_out):
         mask = K.reshape(K.cast(K.not_equal(char_index, f_diac_char), 'float32'), (-1, 1))
         predictions = mask * predictions + (1 - mask) * K.one_hot(f_diac, K.int_shape(predictions)[-1])
     # Force the correct diacritics before some long vowels
-    f_prev_diac_chars = {CHAR2INDEX['ا']: 1, CHAR2INDEX['ى']: 1}
+    f_prev_diac_chars = {CHAR2INDEX['ا']: 1, CHAR2INDEX['ى']: 1, CHAR2INDEX['ة']: 1}
     prev_char_index = K.argmax(inputs[:, -2], axis=-1)
     for fd_char, f_diac in f_prev_diac_chars.items():
         mask = K.clip(K.cast(K.not_equal(char_index[1:-1], fd_char), 'float32') +
                       K.cast(K.equal(prev_char_index[1:-1], CHAR2INDEX[' ']), 'float32'), 0, 1)
-        if fd_char != CHAR2INDEX['ى']:
+        if fd_char == CHAR2INDEX['ا']:
             mask = K.clip(mask + K.cast(K.equal(char_index[2:], CHAR2INDEX[' ']), 'float32'), 0, 1)
         mask = K.reshape(K.concatenate([mask, K.ones((2,))], axis=0), (-1, 1))
         predictions = predictions * mask + (1 - mask) * K.one_hot(f_diac, K.int_shape(predictions)[-1])
