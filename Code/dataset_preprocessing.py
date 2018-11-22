@@ -209,7 +209,7 @@ def text_to_indices(text):
     return char_vectors
 
 
-def add_time_steps(one_hot_matrix, time_steps, word_level=False):
+def add_time_steps(one_hot_matrix, time_steps, word_level):
     """
     Transform a 2D one-hot matrix into a 3D one containing time steps.
     :param one_hot_matrix: ndarray, the one-hot matrix
@@ -237,7 +237,13 @@ def add_time_steps(one_hot_matrix, time_steps, word_level=False):
     return X
 
 
-def input_to_sentence(batch, word_level=False):
+def input_to_sentence(batch, word_level):
+    """
+    Revert an input batch again to text format.
+    :param batch: ndarray, an input batch representing a sentence.
+    :param word_level: bool, True if an instance corresponds to a word, False otherwise.
+    :return: str, the original text.
+    """
     assert isinstance(batch, np.ndarray) and len(batch.shape) == 3
     assert isinstance(word_level, bool)
     if not word_level:

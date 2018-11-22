@@ -178,7 +178,7 @@ def train_shadda_model(train_sentences, test_sentences, epochs=20, show_predicti
         sum_factors = 0
         for k in range(len(train_targets)):
             l, a, p, r = model.train_on_batch(
-                add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS),
+                add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS, False),
                 train_targets[k], class_weight={0: 1, 1: balancing_factor}
             )
             acc += a * train_targets[k].shape[0]
@@ -199,7 +199,8 @@ def train_shadda_model(train_sentences, test_sentences, epochs=20, show_predicti
         sum_factors = 0
         for k in range(len(test_targets)):
             l, a, p, r = model.test_on_batch(
-                add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS), test_targets[k]
+                add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS, False),
+                test_targets[k]
             )
             acc += a * test_targets[k].shape[0]
             loss += l * test_targets[k].shape[0]
@@ -211,9 +212,9 @@ def train_shadda_model(train_sentences, test_sentences, epochs=20, show_predicti
         )
         print('Test predictions samples:')
         for k in sample(range(len(test_targets)), show_predictions_count):
-            test_input = add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS)
+            test_input = add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS, False)
             predicted_indices = model.predict_on_batch(test_input) >= 0.5
-            u_text = input_to_sentence(test_input)
+            u_text = input_to_sentence(test_input, False)
             diacritics = [NAME2DIACRITIC['Shadda'] if c else '' for c in predicted_indices]
             print(merge_diacritics(u_text, diacritics))
 
@@ -292,7 +293,7 @@ def train_morphological_diacritics_model(train_sentences, test_sentences, epochs
         sum_factors = 0
         for k in range(len(train_targets)):
             l, a, p, r = model.train_on_batch(
-                add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS),
+                add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS, False),
                 utils.to_categorical(train_targets[k], len(b_factors)), class_weight=dict(enumerate(b_factors))
             )
             acc += a * train_targets[k].shape[0]
@@ -313,7 +314,7 @@ def train_morphological_diacritics_model(train_sentences, test_sentences, epochs
         sum_factors = 0
         for k in range(len(test_targets)):
             l, a, p, r = model.test_on_batch(
-                add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS),
+                add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS, False),
                 utils.to_categorical(test_targets[k], len(b_factors))
             )
             acc += a * test_targets[k].shape[0]
@@ -326,9 +327,9 @@ def train_morphological_diacritics_model(train_sentences, test_sentences, epochs
         )
         print('Test predictions samples:')
         for k in sample(range(len(test_targets)), show_predictions_count):
-            test_input = add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS)
+            test_input = add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS, False)
             predicted_indices = np.argmax(model.predict_on_batch(test_input), axis=-1)
-            u_text = input_to_sentence(test_input)
+            u_text = input_to_sentence(test_input, False)
             diacritics = np.empty((len(u_text),), dtype=str)
             diacritics[predicted_indices == 0] = ''
             diacritics[predicted_indices == 1] = NAME2DIACRITIC['Fatha']
@@ -358,7 +359,7 @@ def last_diacritics_post_corrections(in_out):
 def train_last_diacritics_model(train_sentences, test_sentences, epochs=20, show_predictions_count=10):
     print('Generating train dataset...')
     train_inputs, train_targets = generate_last_diacritics_dataset(train_sentences)
-    b_factors = np.empty((8,))
+    b_factors = np.zeros((8,))
     for tsl in train_targets:
         for label in set(tsl):
             for i in range(8):
@@ -385,7 +386,7 @@ def train_last_diacritics_model(train_sentences, test_sentences, epochs=20, show
         sum_factors = 0
         for k in range(len(train_targets)):
             l, a, p, r = model.train_on_batch(
-                add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS, word_level=True),
+                add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS, True),
                 utils.to_categorical(train_targets[k], len(b_factors)), class_weight=dict(enumerate(b_factors))
             )
             acc += a * train_targets[k].shape[0]
@@ -406,7 +407,7 @@ def train_last_diacritics_model(train_sentences, test_sentences, epochs=20, show
         sum_factors = 0
         for k in range(len(test_targets)):
             l, a, p, r = model.test_on_batch(
-                add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS, word_level=True),
+                add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS, True),
                 utils.to_categorical(test_targets[k], len(b_factors))
             )
             acc += a * test_targets[k].shape[0]
@@ -419,7 +420,7 @@ def train_last_diacritics_model(train_sentences, test_sentences, epochs=20, show
         )
         print('Test predictions samples:')
         for k in sample(range(len(test_targets)), show_predictions_count):
-            test_input = add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS)
+            test_input = add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS, True)
             predicted_indices = np.argmax(model.predict_on_batch(test_input), axis=-1)
             p_diacritics = np.empty((predicted_indices.shape[0],), dtype=str)
             r_diacritics = np.empty(test_targets[k].shape, dtype=str)
@@ -439,7 +440,7 @@ def train_last_diacritics_model(train_sentences, test_sentences, epochs=20, show
             r_diacritics[test_targets[k] == 5] = NAME2DIACRITIC['Fathatan']
             r_diacritics[test_targets[k] == 6] = NAME2DIACRITIC['Dammatan']
             r_diacritics[test_targets[k] == 7] = NAME2DIACRITIC['Kasratan']
-            u_text = input_to_sentence(test_input)
+            u_text = input_to_sentence(test_input, True)
             p_diacritized_sentence = ''
             r_diacritized_sentence = ''
             for word, p_diacritic, r_diacritic in zip(u_text.split(), p_diacritics, r_diacritics):
