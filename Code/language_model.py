@@ -4,6 +4,7 @@ Module containing the models used for automatic diacritization.
 import os.path
 import re
 from abc import ABC, abstractmethod
+from numbers import Real
 from random import shuffle, sample
 from typing import Collection
 
@@ -133,6 +134,14 @@ class DiacritizationModel(ABC):
             print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
                 loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
             )
+            der = self.calculate_der()
+            if isinstance(der, Real):
+                print('DER = {:.2%}'.format(der), end='  ')
+            wer = self.calculate_wer()
+            if isinstance(wer, Real):
+                print('WER = {:.2%}'.format(wer))
+            else:
+                print()
             self.save()
 
     @abstractmethod
@@ -146,6 +155,20 @@ class DiacritizationModel(ABC):
         :param num_samples: number of examples to show.
         """
         raise NotImplementedError
+
+    def calculate_der(self):
+        """
+        Calculate the diacritization error rate.
+        :return: float, the error rate at diacritics level.
+        """
+        return NotImplemented
+
+    def calculate_wer(self):
+        """
+        Calculate the word error rate.
+        :return: float, the error rate at word level.
+        """
+        return NotImplemented
 
 
 class GeminationModel(DiacritizationModel):
@@ -205,8 +228,10 @@ class GeminationModel(DiacritizationModel):
             )
             predicted_indices = self.model.predict_on_batch(test_input) >= 0.5
             u_text = input_to_sentence(test_input, False)
-            diacritics = [NAME2DIACRITIC['Shadda'] if c else '' for c in predicted_indices]
-            print(merge_diacritics(u_text, diacritics))
+            p_diacritics = [NAME2DIACRITIC['Shadda'] if c else '' for c in predicted_indices]
+            r_diacritics = [NAME2DIACRITIC['Shadda'] if c else '' for c in self.test_targets[k]]
+            print(merge_diacritics(u_text, p_diacritics))
+            print(merge_diacritics(u_text, r_diacritics))
 
     def calculate_balancing_factors(self):
         shadda_count = 0
@@ -214,8 +239,33 @@ class GeminationModel(DiacritizationModel):
         for batch_targets in self.train_targets:
             shadda_count += np.sum(batch_targets)
             total += np.shape(batch_targets)[0]
-        balancing_factor = total / shadda_count
+        balancing_factor = total / (shadda_count + 1)
         return {0: 1, 1: balancing_factor}
+
+    def calculate_der(self):
+        not_correct = 0
+        total = 0
+        for l_input, l_target in zip(self.test_inputs, self.test_targets):
+            test_input = add_time_steps(utils.to_categorical(l_input, len(CHAR2INDEX)), self.time_steps, False)
+            test_prediction = self.model.predict_on_batch(test_input).flatten()
+            not_spaces = l_input != CHAR2INDEX[' ']
+            total += np.sum(not_spaces)
+            not_correct += np.sum(l_target[not_spaces] != np.round(test_prediction[not_spaces]))
+        return not_correct / total
+
+    def calculate_wer(self):
+        not_correct = 0
+        total = 0
+        for l_input, l_target in zip(self.test_inputs, self.test_targets):
+            test_input = add_time_steps(utils.to_categorical(l_input, len(CHAR2INDEX)), self.time_steps, False)
+            test_pred = self.model.predict_on_batch(test_input).flatten()
+            spaces_indices = np.concatenate((np.nonzero(l_input == CHAR2INDEX[' '])[0], np.shape(l_input)[0:1]))
+            last = 0
+            for i in spaces_indices:
+                not_correct += not np.all(l_target[last:i] == np.round(test_pred[last:i]))
+                total += 1
+                last = i + 1
+        return not_correct / total
 
 
 class MorphologicalDiacriticsModel(DiacritizationModel):
@@ -297,7 +347,7 @@ class MorphologicalDiacriticsModel(DiacritizationModel):
             for label in set(tsl):
                 for i in range(b_factors.shape[0]):
                     b_factors[i] += np.sum(label == i)
-        b_factors = np.max(b_factors) / b_factors
+        b_factors = np.max(b_factors) / (b_factors + 1)
         return dict(enumerate(b_factors))
 
     def visualize(self, num_samples):
@@ -397,7 +447,7 @@ class LastDiacriticModel(DiacritizationModel):
             for label in set(tsl):
                 for i in range(b_factors.shape[0]):
                     b_factors[i] += np.sum(label == i)
-        b_factors = np.max(b_factors) / b_factors
+        b_factors = np.max(b_factors) / (b_factors + 1)
         return dict(enumerate(b_factors))
 
     def visualize(self, num_samples):
@@ -483,7 +533,7 @@ if __name__ == '__main__':
     train_size = round(0.9 * len(sentences))
     train_sentences = sentences[:train_size]
     test_sentences = sentences[train_size:]
-    model = LastDiacriticModel([128, 64], [0.1, 0.1])
+    model = GeminationModel([128, 64], [0.1, 0.1])
     model.feed_data(train_sentences, test_sentences)
     model.train(1)
     model.visualize(20)
