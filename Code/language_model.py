@@ -324,46 +324,119 @@ class MorphologicalDiacriticsModel(DiacritizationModel):
             print(merge_diacritics(u_text, r_diacritics.tolist()))
 
 
-def generate_last_diacritics_dataset(sentences):
-    """
-    Generate a dataset for training on last diacritics only.
-    :param sentences: list of str, the sentences.
-    :return: list of input arrays and list of target arrays, each element is a batch.
-    """
-    inputs = []
-    targets = []
-    for sentence in sentences:
-        target = []
-        input = []
-        for word in sentence.split():
-            if word[-1] in ARABIC_DIACRITICS - {NAME2DIACRITIC['Shadda']}:
-                if word[-1] == NAME2DIACRITIC['Fatha']:
-                    target.append(1)
-                elif word[-1] == NAME2DIACRITIC['Damma']:
-                    target.append(2)
-                elif word[-1] == NAME2DIACRITIC['Kasra']:
-                    target.append(3)
-                elif word[-1] == NAME2DIACRITIC['Sukun']:
-                    target.append(4)
-                elif word[-1] == NAME2DIACRITIC['Fathatan']:
-                    target.append(5)
-                elif word[-1] == NAME2DIACRITIC['Dammatan']:
-                    target.append(6)
-                elif word[-1] == NAME2DIACRITIC['Kasratan']:
-                    target.append(7)
-            elif word[-1] == 'ا':
-                if len(word) > 1 and word[-2] == NAME2DIACRITIC['Fathatan']:
-                    target.append(5)
-                elif len(word) > 1 and word[-2] == NAME2DIACRITIC['Fatha']:
-                    target.append(1)
+class LastDiacriticModel(DiacritizationModel):
+
+    @staticmethod
+    def generate_dataset(sentences):
+        """
+        Generate a dataset for training on last diacritics only.
+        :param sentences: list of str, the sentences.
+        :return: list of input arrays and list of target arrays, each element is a batch.
+        """
+        inputs = []
+        targets = []
+        for sentence in sentences:
+            target = []
+            input = []
+            for word in sentence.split():
+                if word[-1] in ARABIC_DIACRITICS - {NAME2DIACRITIC['Shadda']}:
+                    if word[-1] == NAME2DIACRITIC['Fatha']:
+                        target.append(1)
+                    elif word[-1] == NAME2DIACRITIC['Damma']:
+                        target.append(2)
+                    elif word[-1] == NAME2DIACRITIC['Kasra']:
+                        target.append(3)
+                    elif word[-1] == NAME2DIACRITIC['Sukun']:
+                        target.append(4)
+                    elif word[-1] == NAME2DIACRITIC['Fathatan']:
+                        target.append(5)
+                    elif word[-1] == NAME2DIACRITIC['Dammatan']:
+                        target.append(6)
+                    elif word[-1] == NAME2DIACRITIC['Kasratan']:
+                        target.append(7)
+                elif word[-1] == 'ا':
+                    if len(word) > 1 and word[-2] == NAME2DIACRITIC['Fathatan']:
+                        target.append(5)
+                    elif len(word) > 1 and word[-2] == NAME2DIACRITIC['Fatha']:
+                        target.append(1)
+                    else:
+                        target.append(0)
                 else:
                     target.append(0)
-            else:
-                target.append(0)
-            input.append(np.array([CHAR2INDEX[x] for x in clear_diacritics(word) + ' ']))
-        targets.append(np.array(target))
-        inputs.append(np.concatenate(input)[:-1])
-    return inputs, targets
+                input.append(np.array([CHAR2INDEX[x] for x in clear_diacritics(word) + ' ']))
+            targets.append(np.array(target))
+            inputs.append(np.concatenate(input)[:-1])
+        return inputs, targets
+
+    @staticmethod
+    def post_corrections(in_out):
+        """
+        Correct any obviously misplaced last diacritic mark according to the last character and its context.
+        :param in_out: input layer and prediction layer outputs.
+        :return: corrected predictions.
+        """
+        inputs, predictions = in_out
+        last_letter_index = K.argmax(inputs[:, -1], axis=-1)
+        # Only Fathatan or Fatha or nothing for the last alef.
+        mask = K.reshape(K.cast(K.not_equal(last_letter_index, CHAR2INDEX['ا']), 'float32'), (-1, 1))
+        predictions = mask * predictions + (1 - mask) * K.constant([1, 1, 0, 0, 0, 1, 0, 0], shape=(1, 8)) * predictions
+        # Nothing for alef maqsura
+        mask = K.reshape(K.cast(K.not_equal(last_letter_index, CHAR2INDEX['ى']), 'float32'), (-1, 1))
+        predictions = mask * predictions + (1 - mask) * K.constant([1, 0, 0, 0, 0, 0, 0, 0], shape=(1, 8))
+        return predictions
+
+    def __init__(self, lstm_sizes, dropouts):
+        super().__init__(lstm_sizes, dropouts, 8)
+
+    def train(self, epochs, **kwargs):
+        super(LastDiacriticModel, self).train(epochs, True)
+
+    def calculate_balancing_factors(self):
+        b_factors = np.zeros((8,))
+        for tsl in self.test_targets:
+            for label in set(tsl):
+                for i in range(b_factors.shape[0]):
+                    b_factors[i] += np.sum(label == i)
+        b_factors = np.max(b_factors) / b_factors
+        return dict(enumerate(b_factors))
+
+    def visualize(self, num_samples):
+        print('Test predictions samples:')
+        for k in sample(range(len(self.test_targets)), num_samples):
+            test_input = add_time_steps(
+                utils.to_categorical(self.test_inputs[k], len(CHAR2INDEX)), self.time_steps, True
+            )
+            predicted_indices = np.argmax(self.model.predict_on_batch(test_input), axis=-1)
+            p_diacritics = np.empty((predicted_indices.shape[0],), dtype=str)
+            r_diacritics = np.empty(self.test_targets[k].shape, dtype=str)
+            p_diacritics[predicted_indices == 0] = ''
+            p_diacritics[predicted_indices == 1] = NAME2DIACRITIC['Fatha']
+            p_diacritics[predicted_indices == 2] = NAME2DIACRITIC['Damma']
+            p_diacritics[predicted_indices == 3] = NAME2DIACRITIC['Kasra']
+            p_diacritics[predicted_indices == 4] = NAME2DIACRITIC['Sukun']
+            p_diacritics[predicted_indices == 5] = NAME2DIACRITIC['Fathatan']
+            p_diacritics[predicted_indices == 6] = NAME2DIACRITIC['Dammatan']
+            p_diacritics[predicted_indices == 7] = NAME2DIACRITIC['Kasratan']
+            r_diacritics[self.test_targets[k] == 0] = ''
+            r_diacritics[self.test_targets[k] == 1] = NAME2DIACRITIC['Fatha']
+            r_diacritics[self.test_targets[k] == 2] = NAME2DIACRITIC['Damma']
+            r_diacritics[self.test_targets[k] == 3] = NAME2DIACRITIC['Kasra']
+            r_diacritics[self.test_targets[k] == 4] = NAME2DIACRITIC['Sukun']
+            r_diacritics[self.test_targets[k] == 5] = NAME2DIACRITIC['Fathatan']
+            r_diacritics[self.test_targets[k] == 6] = NAME2DIACRITIC['Dammatan']
+            r_diacritics[self.test_targets[k] == 7] = NAME2DIACRITIC['Kasratan']
+            u_text = input_to_sentence(test_input, True)
+            p_diacritized_sentence = ''
+            r_diacritized_sentence = ''
+            for word, p_diacritic, r_diacritic in zip(u_text.split(), p_diacritics, r_diacritics):
+                if word[-1] == 'ا':
+                    p_diacritized_sentence += word[:-1] + p_diacritic + word[-1] + ' '
+                    r_diacritized_sentence += word[:-1] + r_diacritic + word[-1] + ' '
+                else:
+                    p_diacritized_sentence += word + p_diacritic + ' '
+                    r_diacritized_sentence += word + r_diacritic + ' '
+            print(p_diacritized_sentence[:-1])
+            print(r_diacritized_sentence[:-1])
 
 
 def keras_precision(y_true, y_pred):
@@ -389,117 +462,6 @@ def keras_recall(y_true, y_pred):
     return recall
 
 
-def last_diacritics_post_corrections(in_out):
-    """
-    Correct any obviously misplaced last diacritic mark according to the last character and its context.
-    :param in_out: input layer and prediction layer outputs.
-    :return: corrected predictions.
-    """
-    inputs, predictions = in_out
-    last_letter_index = K.argmax(inputs[:, -1], axis=-1)
-    # Only Fathatan or Fatha for the last alef.
-    mask = K.reshape(K.cast(K.not_equal(last_letter_index, CHAR2INDEX['ا']), 'float32'), (-1, 1))
-    predictions = mask * predictions + (1 - mask) * K.constant([1, 1, 0, 0, 0, 1, 0, 0], shape=(1, 8)) * predictions
-    # Nothing for alef maqsura
-    mask = K.reshape(K.cast(K.not_equal(last_letter_index, CHAR2INDEX['ى']), 'float32'), (-1, 1))
-    predictions = mask * predictions + (1 - mask) * K.constant([1, 0, 0, 0, 0, 0, 0, 0], shape=(1, 8))
-    return predictions
-
-
-# def train_last_diacritics_model(train_sentences, test_sentences, epochs=20, show_predictions_count=10):
-#     print('Generating train dataset...')
-#     train_inputs, train_targets = generate_last_diacritics_dataset(train_sentences)
-#     b_factors = np.zeros((8,))
-#     for tsl in train_targets:
-#         for label in set(tsl):
-#             for i in range(8):
-#                 b_factors[i] += np.sum(label == i)
-#     b_factors = np.max(b_factors) / b_factors
-#     print('Balancing factors: None={:.2f} Fatha={:.2f} Damma={:.2f} Kasra={:.2f} Sukun={:.2f} Fathatan={:.2f} '
-#           'Dammatan={:.2f} Kasratan={:.2f}'.format(*b_factors))
-#     print('Generating test dataset...')
-#     test_inputs, test_targets = generate_last_diacritics_dataset(test_sentences)
-#     print('Training...')
-#     input_layer = Input(shape=(TIME_STEPS, len(CHAR2INDEX)))
-#     lstm1_layer = Bidirectional(LSTM(128, dropout=0.1, return_sequences=True))(input_layer)
-#     lstm2_layer = Bidirectional(LSTM(128, dropout=0.1))(lstm1_layer)
-#     dense_layer = Dense(len(b_factors), activation='softmax')(lstm2_layer)
-#     post_layer = Lambda(last_diacritics_post_corrections)([input_layer, dense_layer])
-#     model = Model(inputs=input_layer, outputs=post_layer)
-#     model.compile(OPTIMIZER, losses.categorical_crossentropy, [metrics.categorical_accuracy, keras_precision,
-#                                                                keras_recall])
-#     for i in range(1, epochs + 1):
-#         acc = 0
-#         loss = 0
-#         prec = 0
-#         rec = 0
-#         sum_factors = 0
-#         for k in range(len(train_targets)):
-#             l, a, p, r = model.train_on_batch(
-#                 add_time_steps(utils.to_categorical(train_inputs[k], len(CHAR2INDEX)), TIME_STEPS, True),
-#                 utils.to_categorical(train_targets[k], len(b_factors)), class_weight=dict(enumerate(b_factors))
-#             )
-#             acc += a * train_targets[k].shape[0]
-#             loss += l * train_targets[k].shape[0]
-#             prec += p * train_targets[k].shape[0]
-#             rec += r * train_targets[k].shape[0]
-#             sum_factors += train_targets[k].shape[0]
-#             if k % 1000 == 0:
-#                 print('{}/{}: Train ({}/{}):'.format(i, epochs, k + 1, len(train_targets)))
-#                 print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-#                     loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
-#                 )
-#         print('{}/{}: Test:'.format(i, epochs))
-#         acc = 0
-#         loss = 0
-#         prec = 0
-#         rec = 0
-#         sum_factors = 0
-#         for k in range(len(test_targets)):
-#             l, a, p, r = model.test_on_batch(
-#                 add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS, True),
-#                 utils.to_categorical(test_targets[k], len(b_factors))
-#             )
-#             acc += a * test_targets[k].shape[0]
-#             loss += l * test_targets[k].shape[0]
-#             prec += p * test_targets[k].shape[0]
-#             rec += r * test_targets[k].shape[0]
-#             sum_factors += test_targets[k].shape[0]
-#         print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-#             loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
-#         )
-#         print('Test predictions samples:')
-#         for k in sample(range(len(test_targets)), show_predictions_count):
-#             test_input = add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)), TIME_STEPS, True)
-#             predicted_indices = np.argmax(model.predict_on_batch(test_input), axis=-1)
-#             p_diacritics = np.empty((predicted_indices.shape[0],), dtype=str)
-#             r_diacritics = np.empty(test_targets[k].shape, dtype=str)
-#             p_diacritics[predicted_indices == 0] = ''
-#             p_diacritics[predicted_indices == 1] = NAME2DIACRITIC['Fatha']
-#             p_diacritics[predicted_indices == 2] = NAME2DIACRITIC['Damma']
-#             p_diacritics[predicted_indices == 3] = NAME2DIACRITIC['Kasra']
-#             p_diacritics[predicted_indices == 4] = NAME2DIACRITIC['Sukun']
-#             p_diacritics[predicted_indices == 5] = NAME2DIACRITIC['Fathatan']
-#             p_diacritics[predicted_indices == 6] = NAME2DIACRITIC['Dammatan']
-#             p_diacritics[predicted_indices == 7] = NAME2DIACRITIC['Kasratan']
-#             r_diacritics[test_targets[k] == 0] = ''
-#             r_diacritics[test_targets[k] == 1] = NAME2DIACRITIC['Fatha']
-#             r_diacritics[test_targets[k] == 2] = NAME2DIACRITIC['Damma']
-#             r_diacritics[test_targets[k] == 3] = NAME2DIACRITIC['Kasra']
-#             r_diacritics[test_targets[k] == 4] = NAME2DIACRITIC['Sukun']
-#             r_diacritics[test_targets[k] == 5] = NAME2DIACRITIC['Fathatan']
-#             r_diacritics[test_targets[k] == 6] = NAME2DIACRITIC['Dammatan']
-#             r_diacritics[test_targets[k] == 7] = NAME2DIACRITIC['Kasratan']
-#             u_text = input_to_sentence(test_input, True)
-#             p_diacritized_sentence = ''
-#             r_diacritized_sentence = ''
-#             for word, p_diacritic, r_diacritic in zip(u_text.split(), p_diacritics, r_diacritics):
-#                 p_diacritized_sentence += word + p_diacritic + ' '
-#                 r_diacritized_sentence += word + r_diacritic + ' '
-#             print(p_diacritized_sentence[:-1])
-#             print(r_diacritized_sentence[:-1])
-
-
 if __name__ == '__main__':
 
     file_paths = [
@@ -521,7 +483,7 @@ if __name__ == '__main__':
     train_size = round(0.9 * len(sentences))
     train_sentences = sentences[:train_size]
     test_sentences = sentences[train_size:]
-    model = MorphologicalDiacriticsModel([128, 64], [0.1, 0.1])
+    model = LastDiacriticModel([128, 64], [0.1, 0.1])
     model.feed_data(train_sentences, test_sentences)
     model.train(1)
     model.visualize(20)
