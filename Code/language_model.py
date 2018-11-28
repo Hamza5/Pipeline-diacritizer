@@ -19,7 +19,7 @@ from tensorflow.keras.layers import LSTM, Dense, Lambda, Input, Bidirectional
 
 from dataset_preprocessing import keep_selected_diacritics, NAME2DIACRITIC, clear_diacritics, extract_diacritics, \
     text_to_indices, CHAR2INDEX, ARABIC_DIACRITICS, read_text_file, filter_tokenized_sentence, \
-    fix_double_diacritics_error, add_time_steps, input_to_sentence, tokenize, merge_diacritics
+    fix_diacritics_errors, add_time_steps, input_to_sentence, tokenize, merge_diacritics
 
 LAST_DIACRITIC_REGEXP = re.compile('['+''.join(ARABIC_DIACRITICS)+r']+(?= |$)')
 
@@ -526,7 +526,7 @@ if __name__ == '__main__':
         sentences += read_text_file(file_path)
     print('Parsing and cleaning...')
     sentences = [' '.join(sf) for sf in
-                 filter(lambda x: len(x) > 0, [filter_tokenized_sentence(tokenize(fix_double_diacritics_error(s)))
+                 filter(lambda x: len(x) > 0, [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)))
                                                for s in sentences])]
     shuffle(sentences)
     print('Number of sentences =', len(sentences))

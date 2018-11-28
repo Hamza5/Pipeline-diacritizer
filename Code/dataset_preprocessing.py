@@ -14,6 +14,7 @@ ARABIC_DIACRITICS = frozenset(NAME2DIACRITIC.values())
 ARABIC_LETTERS = frozenset([chr(x) for x in (list(range(0x0621, 0x63B)) + list(range(0x0641, 0x064B)))] + ['ـ'])
 ARABIC_SYMBOLS = ARABIC_LETTERS | ARABIC_DIACRITICS
 EXTRA_SUKUN_REGEXP = re.compile(r'(?<=ال)' + NAME2DIACRITIC['Sukun'])
+YA_REGEXP = re.compile(r'ى(?=['+''.join(ARABIC_DIACRITICS)+r'])')
 XML_TAG = r'(?:<.+>)+'
 SENTENCE_SEPARATORS = '.:؟!'
 SPACES = ' \t'
@@ -95,13 +96,20 @@ def merge_diacritics(undiacritized_text, diacritics):
     return ''.join(sequence)
 
 
-def fix_double_diacritics_error(diacritized_text):
+def fix_diacritics_errors(diacritized_text):
     """
-    Remove the duplicated diacritics by leaving the second one only when there are two incompatible diacritics.
+    Fix and normalize some diacritization errors in the sentences.
     :param diacritized_text: the text containing the arabic letters with diacritics.
     :return: str, the fixed text.
     """
     assert isinstance(diacritized_text, str)
+    # Remove the extra Sukun from ال
+    diacritized_text = EXTRA_SUKUN_REGEXP.sub('', diacritized_text)
+    # Fix misplaced Fathatan
+    diacritized_text = diacritized_text.replace('اً', 'ًا')
+    # Fix ى that should be ي
+    diacritized_text = YA_REGEXP.sub('ي', diacritized_text)
+    # Remove the duplicated diacritics by leaving the second one only when there are two incompatible diacritics
     fixed_text = diacritized_text[0]
     for x in diacritized_text[1:]:
         if x in ARABIC_DIACRITICS and fixed_text[-1] in ARABIC_DIACRITICS:
@@ -118,7 +126,6 @@ def clean_text(text):
     :return: str, the cleaned text.
     """
     assert isinstance(text, str)
-    text = EXTRA_SUKUN_REGEXP.sub('', text)
     # Clean HTML garbage, tatweel, dates, and replace numbers.
     return NUMBER_REGEXP.sub('0', DATETIME_REGEXP.sub('', text.replace('ـ', '').replace('&quot;', '')))
 
