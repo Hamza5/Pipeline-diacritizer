@@ -1,8 +1,83 @@
+from random import shuffle
+
+
+def process(source, destination, min_words, min_diac_rate):
+    with destination.open('w', encoding='UTF-8') as dest_file:
+        if source.is_dir():
+            for file_path in filter(lambda x: x.is_file(), source.iterdir()):
+                print('Parsing', file_path, '...')
+                sentences = read_text_file(str(file_path))
+                filtered_sentences = set()
+                for sf in filter(lambda x: len(x) > 0,
+                                 [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)),
+                                                            min_words, min_diac_rate)
+                                  for s in sentences]):
+                    filtered_sentences.add(' '.join(sf))
+                for sf in filtered_sentences:
+                    print(sf, file=dest_file)
+        elif source.is_file():
+            print('Parsing', source, '...')
+            sentences = read_text_file(str(source))
+            filtered_sentences = set()
+            for sf in filter(lambda x: len(x) > 0,
+                             [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)),
+                                                        min_words, min_diac_rate)
+                              for s in sentences]):
+                filtered_sentences.add(' '.join(sf))
+            for sf in filtered_sentences:
+                print(sf, file=dest_file)
+        else:
+            root_p.error('{} is neither a file nor a directory!'.format(source))
+            root_p.exit(-2)
+    print('Finished')
+
+
+def partition(dataset_file, train_ratio, val_test_ratio, shuffle_every):
+    # Prepare files for train, validation and test
+    train_path = dataset_file.with_name(dataset_file.stem + '_train.txt')
+    val_path = dataset_file.with_name(dataset_file.stem + '_val.txt')
+    test_path = dataset_file.with_name(dataset_file.stem + '_test.txt')
+    train_path.open('w').close()
+    val_path.open('w').close()
+    test_path.open('w').close()
+    print('Generating sets from', dataset_file)
+    with dataset_file.open('r', encoding='UTF-8') as data_file:
+        sentences = []
+        for line in data_file:
+            sentences.append(line)
+            if len(sentences) % shuffle_every == 0:
+                train_size = round(train_ratio * len(sentences))
+                val_size = round(val_test_ratio * (len(sentences) - train_size))
+                shuffle(sentences)
+                with train_path.open('a', encoding='UTF-8') as train_file:
+                    for s in sentences[:train_size]:
+                        train_file.write(s)
+                with val_path.open('a', encoding='UTF-8') as val_file:
+                    for s in sentences[train_size:train_size + val_size]:
+                        val_file.write(s)
+                with test_path.open('a', encoding='UTF-8') as test_file:
+                    for s in sentences[train_size + val_size:]:
+                        test_file.write(s)
+                sentences.clear()
+        train_size = round(train_ratio * len(sentences))
+        val_size = round(val_test_ratio * (len(sentences) - train_size))
+        shuffle(sentences)
+        with train_path.open('a', encoding='UTF-8') as train_file:
+            for s in sentences[:train_size]:
+                train_file.write(s)
+        with val_path.open('a', encoding='UTF-8') as val_file:
+            for s in sentences[train_size:train_size + val_size]:
+                val_file.write(s)
+        with test_path.open('a', encoding='UTF-8') as test_file:
+            for s in sentences[train_size + val_size:]:
+                test_file.write(s)
+    print('Finished')
+
+
 if __name__ == '__main__':
 
     import sys
     from pathlib import Path
-    from random import shuffle
     from argparse import ArgumentParser
 
     from dataset_preprocessing import read_text_file, filter_tokenized_sentence, tokenize, fix_diacritics_errors
@@ -35,71 +110,6 @@ if __name__ == '__main__':
         root_p.print_help(sys.stderr)
         root_p.exit(-1)
     if 'source' in vars(args):
-        with args.destination.open('w', encoding='UTF-8') as dest_file:
-            if args.source.is_dir():
-                for file_path in filter(lambda x: x.is_file(), args.source.iterdir()):
-                    print('Parsing', file_path, '...')
-                    sentences = read_text_file(str(file_path))
-                    filtered_sentences = set()
-                    for sf in filter(lambda x: len(x) > 0,
-                                     [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)),
-                                                                args.min_words, args.min_diac_rate)
-                                      for s in sentences]):
-                        filtered_sentences.add(' '.join(sf))
-                    for sf in filtered_sentences:
-                        print(sf, file=dest_file)
-            elif args.source.is_file():
-                print('Parsing', args.source, '...')
-                sentences = read_text_file(str(args.source))
-                filtered_sentences = set()
-                for sf in filter(lambda x: len(x) > 0,
-                                 [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)),
-                                                            args.min_words, args.min_diac_rate)
-                                  for s in sentences]):
-                    filtered_sentences.add(' '.join(sf))
-                for sf in filtered_sentences:
-                    print(sf, file=dest_file)
-            else:
-                root_p.error('{} is neither a file nor a directory!'.format(args.source))
-                root_p.exit(-2)
-        print('Finished')
+        process(args.source, args.destination, args.min_words, args.min_diac_rate)
     elif 'dataset_file' in vars(args):
-        # Prepare files for train, validation and test
-        train_path = args.dataset_file.with_name(args.dataset_file.stem + '_train.txt')
-        val_path = args.dataset_file.with_name(args.dataset_file.stem + '_val.txt')
-        test_path = args.dataset_file.with_name(args.dataset_file.stem + '_test.txt')
-        train_path.open('w').close()
-        val_path.open('w').close()
-        test_path.open('w').close()
-        print('Generating sets from', args.dataset_file)
-        with args.dataset_file.open('r', encoding='UTF-8') as data_file:
-            sentences = []
-            for line in data_file:
-                sentences.append(line)
-                if len(sentences) % args.shuffle_every == 0:
-                    train_size = round(args.train_ratio * len(sentences))
-                    val_size = round(args.val_test_ratio * (len(sentences) - train_size))
-                    shuffle(sentences)
-                    with train_path.open('a', encoding='UTF-8') as train_file:
-                        for s in sentences[:train_size]:
-                            train_file.write(s)
-                    with val_path.open('a', encoding='UTF-8') as val_file:
-                        for s in sentences[train_size:train_size + val_size]:
-                            val_file.write(s)
-                    with test_path.open('a', encoding='UTF-8') as test_file:
-                        for s in sentences[train_size + val_size:]:
-                            test_file.write(s)
-                    sentences.clear()
-            train_size = round(args.train_ratio * len(sentences))
-            val_size = round(args.val_test_ratio * (len(sentences) - train_size))
-            shuffle(sentences)
-            with train_path.open('a', encoding='UTF-8') as train_file:
-                for s in sentences[:train_size]:
-                    train_file.write(s)
-            with val_path.open('a', encoding='UTF-8') as val_file:
-                for s in sentences[train_size:train_size + val_size]:
-                    val_file.write(s)
-            with test_path.open('a', encoding='UTF-8') as test_file:
-                for s in sentences[train_size + val_size:]:
-                    test_file.write(s)
-        print('Finished')
+        partition(args.dataset_file, args.train_ratio, args.val_test_ratio, args.shuffle_every)
