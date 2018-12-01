@@ -5,7 +5,7 @@ import os.path
 import re
 from abc import ABC, abstractmethod
 from numbers import Real
-from random import shuffle, sample
+from random import sample
 from typing import Collection
 
 import numpy as np
@@ -18,8 +18,7 @@ from tensorflow.keras import utils
 from tensorflow.keras.layers import LSTM, Dense, Lambda, Input, Bidirectional
 
 from dataset_preprocessing import keep_selected_diacritics, NAME2DIACRITIC, clear_diacritics, extract_diacritics, \
-    text_to_indices, CHAR2INDEX, ARABIC_DIACRITICS, read_text_file, filter_tokenized_sentence, \
-    fix_diacritics_errors, add_time_steps, input_to_sentence, tokenize, merge_diacritics
+    text_to_indices, CHAR2INDEX, ARABIC_DIACRITICS, add_time_steps, input_to_sentence, merge_diacritics
 
 LAST_DIACRITIC_REGEXP = re.compile('['+''.join(ARABIC_DIACRITICS)+r']+(?= |$)')
 
@@ -39,12 +38,13 @@ class DiacritizationModel(ABC):
     def post_corrections(in_out):
         raise NotImplementedError
 
-    def __init__(self, lstm_sizes, dropouts, output_size):
+    def __init__(self, lstm_sizes, dropouts, output_size, save_dir):
         self.train_inputs = []
         self.train_targets = []
-        self.test_inputs = []
-        self.test_targets = []
+        self.val_inputs = []
+        self.val_targets = []
         self.balancing_factors = None
+        self.save_dir = save_dir
         self.time_steps = self.DEFAULT_TIME_STEPS
         self.optimizer = self.DEFAULT_OPTIMIZER
         self.model = self._build_model(lstm_sizes, dropouts, output_size)
@@ -53,13 +53,13 @@ class DiacritizationModel(ABC):
         assert len(lstm_layers_sizes) == len(dropouts) and len(lstm_layers_sizes) > 0
         last_layer = input_layer = Input(shape=(self.time_steps, len(CHAR2INDEX)))
         for layer_size, dropout_factor in zip(lstm_layers_sizes[:-1], dropouts[:-1]):
-            last_layer = Bidirectional(LSTM(layer_size, dropout=dropout_factor, return_sequences=True))(last_layer)
-        last_layer = Bidirectional(LSTM(lstm_layers_sizes[-1], dropout=dropouts[-1]))(last_layer)
+            last_layer = Bidirectional(LSTM(layer_size, dropout=dropout_factor, return_sequences=True,
+                                            unroll=True))(last_layer)
+        last_layer = Bidirectional(LSTM(lstm_layers_sizes[-1], dropout=dropouts[-1], unroll=True))(last_layer)
         output_layer = Dense(output_layer_size, activation='sigmoid')(last_layer)
         post_corrections_layer = Lambda(self.post_corrections)([input_layer, output_layer])
         model = Model(inputs=input_layer, outputs=post_corrections_layer)
-        model.compile(self.optimizer, losses.binary_crossentropy,
-                      [metrics.binary_accuracy, keras_precision, keras_recall])
+        model.compile(self.optimizer, losses.binary_crossentropy, [metrics.binary_accuracy, precision, recall])
         return model
 
     def _generate_file_name(self):
@@ -76,16 +76,17 @@ class DiacritizationModel(ABC):
         if os.path.exists(file_path):
             self.model.load_weights(os.path.join(directory_path, self._generate_file_name()))
 
-    def feed_data(self, train_sentences, test_sentences):
+    def feed_data(self, train_sentences, val_sentences):
         print('Generating train dataset...')
         self.train_inputs, self.train_targets = self.generate_dataset(train_sentences)
-        print('Generating test dataset...')
-        self.test_inputs, self.test_targets = self.generate_dataset(test_sentences)
-        print('Generated {} train batches and {} test batches.'.format(len(self.train_targets), len(self.test_targets)))
+        print('Generating validation dataset...')
+        self.val_inputs, self.val_targets = self.generate_dataset(val_sentences)
+        print('Generated {} train batches and {} validation batches.'.format(len(self.train_targets),
+                                                                             len(self.val_targets)))
         self.balancing_factors = self.calculate_balancing_factors()
 
     def train(self, epochs, word_level):
-        self.load()
+        self.load(self.save_dir)
         for i in range(1, epochs + 1):
             acc = 0
             loss = 0
@@ -94,8 +95,8 @@ class DiacritizationModel(ABC):
             sum_factors = 0
             for k in range(len(self.train_targets)):
                 target = self.train_targets[k]
-                if len(self.balancing_factors) > 2:
-                    target = utils.to_categorical(self.train_targets[k], len(self.balancing_factors))
+                if len(target.shape) > 1:
+                    target = utils.to_categorical(self.train_targets[k], target.shape[-1])
                 l, a, p, r = self.model.train_on_batch(
                     add_time_steps(utils.to_categorical(self.train_inputs[k], len(CHAR2INDEX)),
                                    self.time_steps, word_level),
@@ -111,26 +112,26 @@ class DiacritizationModel(ABC):
                     print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
                         loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
                     )
-            print('{}/{}: Test:'.format(i, epochs))
+            print('{}/{}: Validation:'.format(i, epochs))
             acc = 0
             loss = 0
             prec = 0
             rec = 0
             sum_factors = 0
-            for k in range(len(self.test_targets)):
-                target = self.test_targets[k]
-                if len(self.balancing_factors) > 2:
-                    target = utils.to_categorical(self.test_targets[k], len(self.balancing_factors))
-                l, a, p, r = self.model.test_on_batch(
-                    add_time_steps(utils.to_categorical(self.test_inputs[k], len(CHAR2INDEX)),
+            for k in range(len(self.val_targets)):
+                target = self.val_targets[k]
+                if len(target.shape) > 1:
+                    target = utils.to_categorical(self.val_targets[k], target.shape[-1])
+                l, a, p, r = self.model.val_on_batch(
+                    add_time_steps(utils.to_categorical(self.val_inputs[k], len(CHAR2INDEX)),
                                    self.time_steps, word_level),
                     target
                 )
-                acc += a * self.test_targets[k].shape[0]
-                loss += l * self.test_targets[k].shape[0]
-                prec += p * self.test_targets[k].shape[0]
-                rec += r * self.test_targets[k].shape[0]
-                sum_factors += self.test_targets[k].shape[0]
+                acc += a * self.val_targets[k].shape[0]
+                loss += l * self.val_targets[k].shape[0]
+                prec += p * self.val_targets[k].shape[0]
+                rec += r * self.val_targets[k].shape[0]
+                sum_factors += self.val_targets[k].shape[0]
             print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
                 loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
             )
@@ -142,7 +143,34 @@ class DiacritizationModel(ABC):
                 print('WER = {:.2%}'.format(wer))
             else:
                 print()
-            self.save()
+            self.save(self.save_dir)
+
+    def test(self, test_sentences, word_level):
+        print('Generating test dataset...')
+        test_inputs, test_targets = self.generate_dataset(test_sentences)
+        print('Test:')
+        acc = 0
+        loss = 0
+        prec = 0
+        rec = 0
+        sum_factors = 0
+        for k in range(len(test_targets)):
+            target = test_targets[k]
+            if len(target.shape) > 1:
+                target = utils.to_categorical(test_targets[k], target.shape[-1])
+            l, a, p, r = self.model.test_on_batch(
+                add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)),
+                               self.time_steps, word_level),
+                target
+            )
+            acc += a * test_targets[k].shape[0]
+            loss += l * test_targets[k].shape[0]
+            prec += p * test_targets[k].shape[0]
+            rec += r * test_targets[k].shape[0]
+            sum_factors += test_targets[k].shape[0]
+        print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
+            loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
+        )
 
     @abstractmethod
     def calculate_balancing_factors(self):
@@ -151,7 +179,7 @@ class DiacritizationModel(ABC):
     @abstractmethod
     def visualize(self, num_samples):
         """
-        Diacritize and show random samples from the test set.
+        Diacritize and show random samples from the validation set.
         :param num_samples: number of examples to show.
         """
         raise NotImplementedError
@@ -214,22 +242,25 @@ class GeminationModel(DiacritizationModel):
         allowed_instances *= K.cast(K.not_equal(previous_char_index, CHAR2INDEX[' ']), 'float32')
         return K.reshape(allowed_instances, (-1, 1)) * predictions
 
-    def __init__(self, lstm_sizes, dropouts):
-        super().__init__(lstm_sizes, dropouts, 1)
+    def __init__(self, lstm_sizes, dropouts, save_dir):
+        super().__init__(lstm_sizes, dropouts, 1, save_dir)
 
     def train(self, epochs, **kwargs):
         super(GeminationModel, self).train(epochs, False)
 
+    def test(self, test_sentences, **kwargs):
+        super(GeminationModel, self).test(test_sentences, False)
+
     def visualize(self, num_samples):
-        print('Test predictions samples:')
-        for k in sample(range(len(self.test_targets)), num_samples):
-            test_input = add_time_steps(
-                utils.to_categorical(self.test_inputs[k], len(CHAR2INDEX)), self.time_steps, False
+        print('Validation predictions samples:')
+        for k in sample(range(len(self.val_targets)), num_samples):
+            val_input = add_time_steps(
+                utils.to_categorical(self.val_inputs[k], len(CHAR2INDEX)), self.time_steps, False
             )
-            predicted_indices = self.model.predict_on_batch(test_input) >= 0.5
-            u_text = input_to_sentence(test_input, False)
+            predicted_indices = self.model.predict_on_batch(val_input) >= 0.5
+            u_text = input_to_sentence(val_input, False)
             p_diacritics = [NAME2DIACRITIC['Shadda'] if c else '' for c in predicted_indices]
-            r_diacritics = [NAME2DIACRITIC['Shadda'] if c else '' for c in self.test_targets[k]]
+            r_diacritics = [NAME2DIACRITIC['Shadda'] if c else '' for c in self.val_targets[k]]
             print(merge_diacritics(u_text, p_diacritics))
             print(merge_diacritics(u_text, r_diacritics))
 
@@ -245,24 +276,24 @@ class GeminationModel(DiacritizationModel):
     def calculate_der(self):
         not_correct = 0
         total = 0
-        for l_input, l_target in zip(self.test_inputs, self.test_targets):
-            test_input = add_time_steps(utils.to_categorical(l_input, len(CHAR2INDEX)), self.time_steps, False)
-            test_prediction = self.model.predict_on_batch(test_input).flatten()
+        for l_input, l_target in zip(self.val_inputs, self.val_targets):
+            val_input = add_time_steps(utils.to_categorical(l_input, len(CHAR2INDEX)), self.time_steps, False)
+            val_prediction = self.model.predict_on_batch(val_input).flatten()
             not_spaces = l_input != CHAR2INDEX[' ']
             total += np.sum(not_spaces)
-            not_correct += np.sum(l_target[not_spaces] != np.round(test_prediction[not_spaces]))
+            not_correct += np.sum(l_target[not_spaces] != np.round(val_prediction[not_spaces]))
         return not_correct / total
 
     def calculate_wer(self):
         not_correct = 0
         total = 0
-        for l_input, l_target in zip(self.test_inputs, self.test_targets):
-            test_input = add_time_steps(utils.to_categorical(l_input, len(CHAR2INDEX)), self.time_steps, False)
-            test_pred = self.model.predict_on_batch(test_input).flatten()
+        for l_input, l_target in zip(self.val_inputs, self.val_targets):
+            val_input = add_time_steps(utils.to_categorical(l_input, len(CHAR2INDEX)), self.time_steps, False)
+            val_pred = self.model.predict_on_batch(val_input).flatten()
             spaces_indices = np.concatenate((np.nonzero(l_input == CHAR2INDEX[' '])[0], np.shape(l_input)[0:1]))
             last = 0
             for i in spaces_indices:
-                not_correct += not np.all(l_target[last:i] == np.round(test_pred[last:i]))
+                not_correct += not np.all(l_target[last:i] == np.round(val_pred[last:i]))
                 total += 1
                 last = i + 1
         return not_correct / total
@@ -335,15 +366,18 @@ class MorphologicalDiacriticsModel(DiacritizationModel):
         predictions = mask * predictions + (1 - mask) * K.constant([1, 1, 1, 1, 0], shape=(1, 5)) * predictions
         return predictions
 
-    def __init__(self, lstm_sizes, dropouts):
-        super().__init__(lstm_sizes, dropouts, 5)
+    def __init__(self, lstm_sizes, dropouts, save_dir):
+        super().__init__(lstm_sizes, dropouts, 5, save_dir)
 
     def train(self, epochs, **kwargs):
         super(MorphologicalDiacriticsModel, self).train(epochs, False)
 
+    def test(self, test_sentences, **kwargs):
+        super(MorphologicalDiacriticsModel, self).test(test_sentences, False)
+
     def calculate_balancing_factors(self):
         b_factors = np.zeros((5,))
-        for tsl in self.test_targets:
+        for tsl in self.val_targets:
             for label in set(tsl):
                 for i in range(b_factors.shape[0]):
                     b_factors[i] += np.sum(label == i)
@@ -351,13 +385,13 @@ class MorphologicalDiacriticsModel(DiacritizationModel):
         return dict(enumerate(b_factors))
 
     def visualize(self, num_samples):
-        print('Test predictions samples:')
-        for k in sample(range(len(self.test_targets)), num_samples):
-            test_input = add_time_steps(
-                utils.to_categorical(self.test_inputs[k], len(CHAR2INDEX)), self.time_steps, False
+        print('Validation predictions samples:')
+        for k in sample(range(len(self.val_targets)), num_samples):
+            val_input = add_time_steps(
+                utils.to_categorical(self.val_inputs[k], len(CHAR2INDEX)), self.time_steps, False
             )
-            predicted_indices = np.argmax(self.model.predict_on_batch(test_input), axis=-1)
-            u_text = input_to_sentence(test_input, False)
+            predicted_indices = np.argmax(self.model.predict_on_batch(val_input), axis=-1)
+            u_text = input_to_sentence(val_input, False)
             p_diacritics = np.empty((len(u_text),), dtype=str)
             p_diacritics[predicted_indices == 0] = ''
             p_diacritics[predicted_indices == 1] = NAME2DIACRITIC['Fatha']
@@ -365,11 +399,11 @@ class MorphologicalDiacriticsModel(DiacritizationModel):
             p_diacritics[predicted_indices == 3] = NAME2DIACRITIC['Kasra']
             p_diacritics[predicted_indices == 4] = NAME2DIACRITIC['Sukun']
             r_diacritics = np.empty((len(u_text),), dtype=str)
-            r_diacritics[self.test_targets[k] == 0] = ''
-            r_diacritics[self.test_targets[k] == 1] = NAME2DIACRITIC['Fatha']
-            r_diacritics[self.test_targets[k] == 2] = NAME2DIACRITIC['Damma']
-            r_diacritics[self.test_targets[k] == 3] = NAME2DIACRITIC['Kasra']
-            r_diacritics[self.test_targets[k] == 4] = NAME2DIACRITIC['Sukun']
+            r_diacritics[self.val_targets[k] == 0] = ''
+            r_diacritics[self.val_targets[k] == 1] = NAME2DIACRITIC['Fatha']
+            r_diacritics[self.val_targets[k] == 2] = NAME2DIACRITIC['Damma']
+            r_diacritics[self.val_targets[k] == 3] = NAME2DIACRITIC['Kasra']
+            r_diacritics[self.val_targets[k] == 4] = NAME2DIACRITIC['Sukun']
             print(merge_diacritics(u_text, p_diacritics.tolist()))
             print(merge_diacritics(u_text, r_diacritics.tolist()))
 
@@ -435,15 +469,18 @@ class LastDiacriticModel(DiacritizationModel):
         predictions = mask * predictions + (1 - mask) * K.constant([1, 0, 0, 0, 0, 0, 0, 0], shape=(1, 8))
         return predictions
 
-    def __init__(self, lstm_sizes, dropouts):
-        super().__init__(lstm_sizes, dropouts, 8)
+    def __init__(self, lstm_sizes, dropouts, save_dir):
+        super().__init__(lstm_sizes, dropouts, 8, save_dir)
 
     def train(self, epochs, **kwargs):
         super(LastDiacriticModel, self).train(epochs, True)
 
+    def test(self, test_sentences, **kwargs):
+        super(LastDiacriticModel, self).test(test_sentences, True)
+
     def calculate_balancing_factors(self):
         b_factors = np.zeros((8,))
-        for tsl in self.test_targets:
+        for tsl in self.val_targets:
             for label in set(tsl):
                 for i in range(b_factors.shape[0]):
                     b_factors[i] += np.sum(label == i)
@@ -451,14 +488,14 @@ class LastDiacriticModel(DiacritizationModel):
         return dict(enumerate(b_factors))
 
     def visualize(self, num_samples):
-        print('Test predictions samples:')
-        for k in sample(range(len(self.test_targets)), num_samples):
-            test_input = add_time_steps(
-                utils.to_categorical(self.test_inputs[k], len(CHAR2INDEX)), self.time_steps, True
+        print('Validation predictions samples:')
+        for k in sample(range(len(self.val_targets)), num_samples):
+            val_input = add_time_steps(
+                utils.to_categorical(self.val_inputs[k], len(CHAR2INDEX)), self.time_steps, True
             )
-            predicted_indices = np.argmax(self.model.predict_on_batch(test_input), axis=-1)
+            predicted_indices = np.argmax(self.model.predict_on_batch(val_input), axis=-1)
             p_diacritics = np.empty((predicted_indices.shape[0],), dtype=str)
-            r_diacritics = np.empty(self.test_targets[k].shape, dtype=str)
+            r_diacritics = np.empty(self.val_targets[k].shape, dtype=str)
             p_diacritics[predicted_indices == 0] = ''
             p_diacritics[predicted_indices == 1] = NAME2DIACRITIC['Fatha']
             p_diacritics[predicted_indices == 2] = NAME2DIACRITIC['Damma']
@@ -467,15 +504,15 @@ class LastDiacriticModel(DiacritizationModel):
             p_diacritics[predicted_indices == 5] = NAME2DIACRITIC['Fathatan']
             p_diacritics[predicted_indices == 6] = NAME2DIACRITIC['Dammatan']
             p_diacritics[predicted_indices == 7] = NAME2DIACRITIC['Kasratan']
-            r_diacritics[self.test_targets[k] == 0] = ''
-            r_diacritics[self.test_targets[k] == 1] = NAME2DIACRITIC['Fatha']
-            r_diacritics[self.test_targets[k] == 2] = NAME2DIACRITIC['Damma']
-            r_diacritics[self.test_targets[k] == 3] = NAME2DIACRITIC['Kasra']
-            r_diacritics[self.test_targets[k] == 4] = NAME2DIACRITIC['Sukun']
-            r_diacritics[self.test_targets[k] == 5] = NAME2DIACRITIC['Fathatan']
-            r_diacritics[self.test_targets[k] == 6] = NAME2DIACRITIC['Dammatan']
-            r_diacritics[self.test_targets[k] == 7] = NAME2DIACRITIC['Kasratan']
-            u_text = input_to_sentence(test_input, True)
+            r_diacritics[self.val_targets[k] == 0] = ''
+            r_diacritics[self.val_targets[k] == 1] = NAME2DIACRITIC['Fatha']
+            r_diacritics[self.val_targets[k] == 2] = NAME2DIACRITIC['Damma']
+            r_diacritics[self.val_targets[k] == 3] = NAME2DIACRITIC['Kasra']
+            r_diacritics[self.val_targets[k] == 4] = NAME2DIACRITIC['Sukun']
+            r_diacritics[self.val_targets[k] == 5] = NAME2DIACRITIC['Fathatan']
+            r_diacritics[self.val_targets[k] == 6] = NAME2DIACRITIC['Dammatan']
+            r_diacritics[self.val_targets[k] == 7] = NAME2DIACRITIC['Kasratan']
+            u_text = input_to_sentence(val_input, True)
             p_diacritized_sentence = ''
             r_diacritized_sentence = ''
             for word, p_diacritic, r_diacritic in zip(u_text.split(), p_diacritics, r_diacritics):
@@ -489,7 +526,7 @@ class LastDiacriticModel(DiacritizationModel):
             print(r_diacritized_sentence[:-1])
 
 
-def keras_precision(y_true, y_pred):
+def precision(y_true, y_pred):
     """Precision metric.
     Only computes a batch-wise average of precision. Computes the precision, a
     metric for multi-label classification of how many selected items are
@@ -501,7 +538,7 @@ def keras_precision(y_true, y_pred):
     return precision
 
 
-def keras_recall(y_true, y_pred):
+def recall(y_true, y_pred):
     """Recall metric.
     Only computes a batch-wise average of recall. Computes the recall, a metric
     for multi-label classification of how many relevant items are selected.
@@ -513,27 +550,11 @@ def keras_recall(y_true, y_pred):
 
 
 if __name__ == '__main__':
-
-    file_paths = [
-        # r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\إتحاف المهرة لابن حجر.txt',
-        # r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\أحكام القرآن لابن العربي.txt',
-        r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\أدب الدنيا والدين.txt',
-        r'D:\Data\Documents\Tashkeela-arabic-diacritized-text-utf8-0.3\texts.txt\الأحكام السلطانية.txt'
-    ]
     sentences = []
-    print('Loading text...')
-    for file_path in file_paths:
-        sentences += read_text_file(file_path)
-    print('Parsing and cleaning...')
-    sentences = [' '.join(sf) for sf in
-                 filter(lambda x: len(x) > 0, [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)))
-                                               for s in sentences])]
-    shuffle(sentences)
+    with open('D:\preprocesed_dataset_test.txt', encoding='UTF-8') as dataset_file:
+        for s in dataset_file:
+            sentences.append(s.rstrip('\n'))
     print('Number of sentences =', len(sentences))
-    train_size = round(0.9 * len(sentences))
-    train_sentences = sentences[:train_size]
-    test_sentences = sentences[train_size:]
-    model = GeminationModel([128, 64], [0.1, 0.1])
-    model.feed_data(train_sentences, test_sentences)
-    model.train(1)
-    model.visualize(20)
+    model = GeminationModel([128, 64], [0.1, 0.1], '.')
+    model.load()
+    model.test(sentences)
