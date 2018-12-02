@@ -11,6 +11,7 @@ from typing import Collection
 import numpy as np
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
+from tensorflow.keras import callbacks
 from tensorflow.keras import losses
 from tensorflow.keras import metrics
 from tensorflow.keras import optimizers
@@ -47,6 +48,7 @@ class DiacritizationModel(ABC):
         self.save_dir = save_dir
         self.time_steps = self.DEFAULT_TIME_STEPS
         self.optimizer = self.DEFAULT_OPTIMIZER
+        self.metrics = [metrics.binary_accuracy, precision, recall]
         self.model = self._build_model(lstm_sizes, dropouts, output_size)
 
     def _build_model(self, lstm_layers_sizes, dropouts, output_layer_size):
@@ -56,10 +58,13 @@ class DiacritizationModel(ABC):
             last_layer = Bidirectional(LSTM(layer_size, dropout=dropout_factor, return_sequences=True,
                                             unroll=True))(last_layer)
         last_layer = Bidirectional(LSTM(lstm_layers_sizes[-1], dropout=dropouts[-1], unroll=True))(last_layer)
-        output_layer = Dense(output_layer_size, activation='sigmoid')(last_layer)
+        output_layer = Dense(output_layer_size,
+                             activation=('sigmoid' if output_layer_size == 1 else 'softmax'))(last_layer)
         post_corrections_layer = Lambda(self.post_corrections)([input_layer, output_layer])
         model = Model(inputs=input_layer, outputs=post_corrections_layer)
-        model.compile(self.optimizer, losses.binary_crossentropy, [metrics.binary_accuracy, precision, recall])
+        model.compile(self.optimizer,
+                      losses.binary_crossentropy if output_layer_size == 1 else losses.categorical_crossentropy,
+                      self.metrics)
         return model
 
     def _generate_file_name(self):
@@ -72,9 +77,9 @@ class DiacritizationModel(ABC):
 
     def load(self, directory_path='.'):
         assert isinstance(directory_path, str)
-        file_path = self._generate_file_name()
+        file_path = os.path.join(directory_path, self._generate_file_name())
         if os.path.exists(file_path):
-            self.model.load_weights(os.path.join(directory_path, self._generate_file_name()))
+            self.model.load_weights(file_path)
 
     def feed_data(self, train_sentences, val_sentences):
         print('Generating train dataset...')
@@ -122,7 +127,7 @@ class DiacritizationModel(ABC):
                 target = self.val_targets[k]
                 if len(target.shape) > 1:
                     target = utils.to_categorical(self.val_targets[k], target.shape[-1])
-                l, a, p, r = self.model.val_on_batch(
+                l, a, p, r = self.model.test_on_batch(
                     add_time_steps(utils.to_categorical(self.val_inputs[k], len(CHAR2INDEX)),
                                    self.time_steps, word_level),
                     target
