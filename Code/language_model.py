@@ -39,13 +39,12 @@ class DiacritizationModel(ABC):
     def post_corrections(in_out):
         raise NotImplementedError
 
-    def __init__(self, lstm_sizes, dropouts, output_size, save_dir):
+    def __init__(self, lstm_sizes, dropouts, output_size):
         self.train_inputs = []
         self.train_targets = []
         self.val_inputs = []
         self.val_targets = []
         self.balancing_factors = None
-        self.save_dir = save_dir
         self.time_steps = self.DEFAULT_TIME_STEPS
         self.optimizer = self.DEFAULT_OPTIMIZER
         self.metrics = [metrics.binary_accuracy, precision, recall]
@@ -90,9 +89,24 @@ class DiacritizationModel(ABC):
                                                                              len(self.val_targets)))
         self.balancing_factors = self.calculate_balancing_factors()
 
-    def train(self, epochs, word_level):
-        self.load(self.save_dir)
-        for i in range(1, epochs + 1):
+    def train(self, epochs, save_dir, early_stop_iterations, word_level):
+        cbs = CallbackList([callbacks.EarlyStopping(patience=early_stop_iterations),
+                            callbacks.ProgbarLogger(count_mode='steps'),
+                            callbacks.ModelCheckpoint(os.path.join(save_dir, self._generate_file_name()),
+                                                      save_best_only=True, save_weights_only=True)])
+        cbs.set_model(self.model)
+        cbs.set_params({
+            'epochs': epochs,
+            'steps': len(self.train_targets),
+            'samples': len(self.train_targets),
+            'verbose': 1,
+            'do_validation': True,
+            'metrics': self.metrics,
+        })
+        self.model.stop_training = False
+        cbs.on_train_begin()
+        for i in range(epochs):
+            cbs.on_epoch_begin(epoch=i)
             acc = 0
             loss = 0
             prec = 0
@@ -100,6 +114,8 @@ class DiacritizationModel(ABC):
             sum_factors = 0
             for k in range(len(self.train_targets)):
                 target = self.train_targets[k]
+                batch_logs = {'batch': k, 'size': target.shape[0]}
+                cbs.on_batch_begin(batch=k, logs=batch_logs)
                 if len(target.shape) > 1:
                     target = utils.to_categorical(self.train_targets[k], target.shape[-1])
                 l, a, p, r = self.model.train_on_batch(
@@ -107,17 +123,20 @@ class DiacritizationModel(ABC):
                                    self.time_steps, word_level),
                     target, class_weight=self.balancing_factors
                 )
+                batch_logs['loss'] = l
+                batch_logs['acc'] = a
+                batch_logs['precision'] = p
+                batch_logs['recall'] = r
+                cbs.on_batch_end(batch=k, logs=batch_logs)
                 acc += a * self.train_targets[k].shape[0]
                 loss += l * self.train_targets[k].shape[0]
                 prec += p * self.train_targets[k].shape[0]
                 rec += r * self.train_targets[k].shape[0]
                 sum_factors += self.train_targets[k].shape[0]
-                if k % 1000 == 0:
-                    print('{}/{}: Train ({}/{}):'.format(i, epochs, k + 1, len(self.train_targets)))
-                    print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
-                        loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
-                    )
-            print('{}/{}: Validation:'.format(i, epochs))
+                if self.model.stop_training:
+                    break
+            epoch_logs = {'loss': loss, 'acc': acc, 'precision': prec, 'recall': rec}
+            print('{}/{}: Validation:'.format(i + 1, epochs))
             acc = 0
             loss = 0
             prec = 0
@@ -140,6 +159,8 @@ class DiacritizationModel(ABC):
             print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
                 loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
             )
+            epoch_logs.update({'val_loss': loss, 'val_acc': acc, 'val_precision': prec, 'val_recall': rec})
+            cbs.on_epoch_end(epoch=i, logs=epoch_logs)
             der = self.calculate_der()
             if isinstance(der, Real):
                 print('DER = {:.2%}'.format(der), end='  ')
@@ -148,7 +169,9 @@ class DiacritizationModel(ABC):
                 print('WER = {:.2%}'.format(wer))
             else:
                 print()
-            self.save(self.save_dir)
+            if self.model.stop_training:
+                break
+        cbs.on_train_end()
 
     def test(self, test_sentences, word_level):
         print('Generating test dataset...')
@@ -247,11 +270,11 @@ class GeminationModel(DiacritizationModel):
         allowed_instances *= K.cast(K.not_equal(previous_char_index, CHAR2INDEX[' ']), 'float32')
         return K.reshape(allowed_instances, (-1, 1)) * predictions
 
-    def __init__(self, lstm_sizes, dropouts, save_dir):
-        super().__init__(lstm_sizes, dropouts, 1, save_dir)
+    def __init__(self, lstm_sizes, dropouts):
+        super().__init__(lstm_sizes, dropouts, 1)
 
-    def train(self, epochs, **kwargs):
-        super(GeminationModel, self).train(epochs, False)
+    def train(self, epochs, save_dir, early_stop_iterations, **kwargs):
+        super(GeminationModel, self).train(epochs, save_dir, early_stop_iterations, False)
 
     def test(self, test_sentences, **kwargs):
         super(GeminationModel, self).test(test_sentences, False)
@@ -371,11 +394,11 @@ class MorphologicalDiacriticsModel(DiacritizationModel):
         predictions = mask * predictions + (1 - mask) * K.constant([1, 1, 1, 1, 0], shape=(1, 5)) * predictions
         return predictions
 
-    def __init__(self, lstm_sizes, dropouts, save_dir):
-        super().__init__(lstm_sizes, dropouts, 5, save_dir)
+    def __init__(self, lstm_sizes, dropouts):
+        super().__init__(lstm_sizes, dropouts, 5)
 
-    def train(self, epochs, **kwargs):
-        super(MorphologicalDiacriticsModel, self).train(epochs, False)
+    def train(self, epochs, save_dir, early_stop_iterations, **kwargs):
+        super(MorphologicalDiacriticsModel, self).train(epochs, save_dir, early_stop_iterations, False)
 
     def test(self, test_sentences, **kwargs):
         super(MorphologicalDiacriticsModel, self).test(test_sentences, False)
@@ -474,11 +497,11 @@ class LastDiacriticModel(DiacritizationModel):
         predictions = mask * predictions + (1 - mask) * K.constant([1, 0, 0, 0, 0, 0, 0, 0], shape=(1, 8))
         return predictions
 
-    def __init__(self, lstm_sizes, dropouts, save_dir):
-        super().__init__(lstm_sizes, dropouts, 8, save_dir)
+    def __init__(self, lstm_sizes, dropouts):
+        super().__init__(lstm_sizes, dropouts, 8)
 
-    def train(self, epochs, **kwargs):
-        super(LastDiacriticModel, self).train(epochs, True)
+    def train(self, epochs, save_dir, early_stop_iterations, **kwargs):
+        super(LastDiacriticModel, self).train(epochs, save_dir, early_stop_iterations, True)
 
     def test(self, test_sentences, **kwargs):
         super(LastDiacriticModel, self).test(test_sentences, True)
@@ -554,12 +577,39 @@ def recall(y_true, y_pred):
     return recall
 
 
-if __name__ == '__main__':
-    sentences = []
-    with open('D:\preprocesed_dataset_test.txt', encoding='UTF-8') as dataset_file:
-        for s in dataset_file:
-            sentences.append(s.rstrip('\n'))
-    print('Number of sentences =', len(sentences))
-    model = GeminationModel([128, 64], [0.1, 0.1], '.')
-    model.load()
-    model.test(sentences)
+class CallbackList:
+
+    def __init__(self, callbacks_list):
+        self.callbacks = callbacks_list
+
+    def set_params(self, params):
+        for cbk in self.callbacks:
+            cbk.set_params(params)
+
+    def set_model(self, model):
+        for cbk in self.callbacks:
+            cbk.set_model(model)
+
+    def on_epoch_begin(self, epoch, logs=None):
+        for cbk in self.callbacks:
+            cbk.on_epoch_begin(epoch, logs)
+
+    def on_epoch_end(self, epoch, logs=None):
+        for cbk in self.callbacks:
+            cbk.on_epoch_end(epoch, logs)
+
+    def on_batch_begin(self, batch, logs=None):
+        for cbk in self.callbacks:
+            cbk.on_batch_begin(batch, logs)
+
+    def on_batch_end(self, batch, logs=None):
+        for cbk in self.callbacks:
+            cbk.on_batch_end(batch, logs)
+
+    def on_train_begin(self, logs=None):
+        for cbk in self.callbacks:
+            cbk.on_train_begin(logs)
+
+    def on_train_end(self, logs=None):
+        for cbk in self.callbacks:
+            cbk.on_train_end(logs)
