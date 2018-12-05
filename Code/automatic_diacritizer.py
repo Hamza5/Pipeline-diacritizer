@@ -97,6 +97,22 @@ def train(model_symbol, config_path, train_data_path, val_data_path, iterations,
     model.feed_data(train_data, val_data)
     model.train(iterations, str(weights_dir), early_stop)
 
+def test(model_symbol, config_path, test_data_path, weights_dir):
+    with config_path.open('r') as config_file:
+        config = json.load(config_file)
+    test_data = []
+    with test_data_path.open('r', encoding='UTF-8') as test_data_file:
+        for line in test_data_file:
+            test_data.append(line.rstrip('\n'))
+    if model_symbol == 'G':
+        model = GeminationModel(config['layer_sizes'], config['dropouts'])
+    elif model_symbol == 'MD':
+        model = MorphologicalDiacriticsModel(config['layer_sizes'], config['dropouts'])
+    else:
+        model = LastDiacriticModel(config['layer_sizes'], config['dropouts'])
+    model.load(str(weights_dir))
+    model.test(test_data)
+
 if __name__ == '__main__':
 
     import sys
@@ -129,7 +145,7 @@ if __name__ == '__main__':
     partition_p.add_argument('--shuffle-every', '-s', type=int, default=1000,
                              help='Number of sentences to accumulate before shuffling.')
     train_parser = subparsers.add_parser('train', description='Launch the training of a model.')
-    train_parser.add_argument('model', choices=['G', 'LD', 'MD'],
+    train_parser.add_argument('model_train', choices=['G', 'LD', 'MD'],
                               help='Model to train: Gemination, LastDiacritic, or MorphologicalDiacritic.')
     train_parser.add_argument('--config', '-c', type=Path, required=True, help='Path of the JSON configuration file.')
     train_parser.add_argument('--train-data', '-t', type=Path, required=True, help='Training dataset.')
@@ -140,6 +156,13 @@ if __name__ == '__main__':
                               help='Directory containing the weights file for the model.')
     train_parser.add_argument('--early-stop', '-e', type=int, default=3,
                               help='Maximum number of tries to add when the model performances does not improve.')
+    test_parser = subparsers.add_parser('test', description='Test a pretrained model.')
+    test_parser.add_argument('model_test', choices=['G', 'LD', 'MD'],
+                              help='Model to test: Gemination, LastDiacritic, or MorphologicalDiacritic.')
+    test_parser.add_argument('--config', '-c', type=Path, required=True, help='Path of the JSON configuration file.')
+    test_parser.add_argument('--test-data', '-s', type=Path, required=True, help='Test dataset.')
+    test_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
+                             help='Directory containing the weights file for the model.')
     args = root_p.parse_args()
     if not vars(args):
         root_p.print_help(sys.stderr)
@@ -148,5 +171,7 @@ if __name__ == '__main__':
         process(args.source, args.destination, args.min_words, args.min_diac_rate)
     elif 'dataset_file' in vars(args):
         partition(args.dataset_file, args.train_ratio, args.val_test_ratio, args.shuffle_every)
-    elif 'model' in vars(args):
-        train(args.model, args.config, args.train_data, args.val_data, args.iterations, args.weights_dir, args.early_stop)
+    elif 'model_train' in vars(args):
+        train(args.model_train, args.config, args.train_data, args.val_data, args.iterations, args.weights_dir, args.early_stop)
+    elif 'model_test' in vars(args):
+        test(args.model_test, args.config, args.test_data, args.weights_dir)
