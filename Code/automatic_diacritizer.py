@@ -1,4 +1,7 @@
+import json
 from random import shuffle
+
+from language_model import GeminationModel, LastDiacriticModel, MorphologicalDiacriticsModel
 
 
 def process(source, destination, min_words, min_diac_rate):
@@ -74,6 +77,26 @@ def partition(dataset_file, train_ratio, val_test_ratio, shuffle_every):
     print('Finished')
 
 
+def train(model_symbol, config_path, train_data_path, val_data_path, iterations, weights_dir, early_stop):
+    with config_path.open('r') as config_file:
+        config = json.load(config_file)
+    train_data = []
+    val_data = []
+    with train_data_path.open('r', encoding='UTF-8') as train_data_file:
+        for line in train_data_file:
+            train_data.append(line.rstrip('\n'))
+    with val_data_path.open('r', encoding='UTF-8') as val_data_file:
+        for line in val_data_file:
+            val_data.append(line.rstrip('\n'))
+    if model_symbol == 'G':
+        model = GeminationModel(config['layer_sizes'], config['dropouts'])
+    elif model_symbol == 'MD':
+        model = MorphologicalDiacriticsModel(config['layer_sizes'], config['dropouts'])
+    else:
+        model = LastDiacriticModel(config['layer_sizes'], config['dropouts'])
+    model.feed_data(train_data, val_data)
+    model.train(iterations, str(weights_dir), early_stop)
+
 if __name__ == '__main__':
 
     import sys
@@ -105,6 +128,18 @@ if __name__ == '__main__':
                                                                                      'and test data.')
     partition_p.add_argument('--shuffle-every', '-s', type=int, default=1000,
                              help='Number of sentences to accumulate before shuffling.')
+    train_parser = subparsers.add_parser('train', description='Launch the training of a model.')
+    train_parser.add_argument('model', choices=['G', 'LD', 'MD'],
+                              help='Model to train: Gemination, LastDiacritic, or MorphologicalDiacritic.')
+    train_parser.add_argument('--config', '-c', type=Path, required=True, help='Path of the JSON configuration file.')
+    train_parser.add_argument('--train-data', '-t', type=Path, required=True, help='Training dataset.')
+    train_parser.add_argument('--val-data', '-v', type=Path, required=True, help='Validation dataset.')
+    train_parser.add_argument('--iterations', '-i', type=int, default=15,
+                              help='Maximum number of iterations for training.')
+    train_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
+                              help='Directory containing the weights file for the model.')
+    train_parser.add_argument('--early-stop', '-e', type=int, default=3,
+                              help='Maximum number of tries to add when the model performances does not improve.')
     args = root_p.parse_args()
     if not vars(args):
         root_p.print_help(sys.stderr)
@@ -113,3 +148,5 @@ if __name__ == '__main__':
         process(args.source, args.destination, args.min_words, args.min_diac_rate)
     elif 'dataset_file' in vars(args):
         partition(args.dataset_file, args.train_ratio, args.val_test_ratio, args.shuffle_every)
+    elif 'model' in vars(args):
+        train(args.model, args.config, args.train_data, args.val_data, args.iterations, args.weights_dir, args.early_stop)
