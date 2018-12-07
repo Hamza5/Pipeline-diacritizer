@@ -15,6 +15,7 @@ ARABIC_LETTERS = frozenset([chr(x) for x in (list(range(0x0621, 0x63B)) + list(r
 ARABIC_SYMBOLS = ARABIC_LETTERS | ARABIC_DIACRITICS
 EXTRA_SUKUN_REGEXP = re.compile(r'(?<=ال)' + NAME2DIACRITIC['Sukun'])
 YA_REGEXP = re.compile(r'ى(?=['+''.join(ARABIC_DIACRITICS)+r'])')
+DIACRITIC_SHADDA_REGEXP = re.compile('(['+''.join(ARABIC_DIACRITICS)+'])('+NAME2DIACRITIC['Shadda']+')')
 XML_TAG = r'(?:<.+>)+'
 SENTENCE_SEPARATORS = '.:؟!'
 SPACES = ' \t'
@@ -107,13 +108,15 @@ def fix_diacritics_errors(diacritized_text):
     diacritized_text = EXTRA_SUKUN_REGEXP.sub('', diacritized_text)
     # Fix misplaced Fathatan
     diacritized_text = diacritized_text.replace('اً', 'ًا')
+    # Fix reversed Shadda-Diacritic
+    diacritized_text = DIACRITIC_SHADDA_REGEXP.sub(r'\2\1', diacritized_text)
     # Fix ى that should be ي
     diacritized_text = YA_REGEXP.sub('ي', diacritized_text)
     # Remove the duplicated diacritics by leaving the second one only when there are two incompatible diacritics
     fixed_text = diacritized_text[0]
     for x in diacritized_text[1:]:
         if x in ARABIC_DIACRITICS and fixed_text[-1] in ARABIC_DIACRITICS:
-            if fixed_text[-1] != NAME2DIACRITIC['Shadda']:
+            if fixed_text[-1] != NAME2DIACRITIC['Shadda'] or x == NAME2DIACRITIC['Shadda']:
                 fixed_text = fixed_text[:-1]
         fixed_text += x
     return fixed_text
