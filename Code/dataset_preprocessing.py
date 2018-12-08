@@ -186,13 +186,14 @@ def read_text_file(file_path):
             line = clean_text(line.strip(SPACES+'\n'))
             if line == '' or not line.isprintable():
                 continue
-            fragments = [x.strip(SPACES) for x in
-                         filter(lambda x: x != '', re.split(SENTENCE_TOKENIZATION_REGEXP, line)) if x is not None]
+            fragments = list(filter(lambda x: x != '',
+                                    [x.strip(SPACES) for x in re.split(SENTENCE_TOKENIZATION_REGEXP, line)
+                                     if x is not None]))
             if len(fragments) > 1:
                 for f1, f2 in zip(fragments[:-1], fragments[1:]):
-                    if f2 in SENTENCE_SEPARATORS:
+                    if set(f2).issubset(set(SENTENCE_SEPARATORS)):
                         sentences.append(f1+f2)
-                    elif f1 in SENTENCE_SEPARATORS:
+                    elif set(f1).issubset(set(SENTENCE_SEPARATORS)):
                         continue
                     else:
                         sentences.append(f1)
