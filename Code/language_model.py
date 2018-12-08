@@ -136,7 +136,6 @@ class DiacritizationModel(ABC):
                 if self.model.stop_training:
                     break
             epoch_logs = {'loss': loss, 'acc': acc, 'precision': prec, 'recall': rec}
-            print('{}/{}: Validation:'.format(i + 1, epochs))
             acc = 0
             loss = 0
             prec = 0
@@ -156,11 +155,12 @@ class DiacritizationModel(ABC):
                 prec += p * self.val_targets[k].shape[0]
                 rec += r * self.val_targets[k].shape[0]
                 sum_factors += self.val_targets[k].shape[0]
+            epoch_logs.update({'val_loss': loss, 'val_acc': acc, 'val_precision': prec, 'val_recall': rec})
+            cbs.on_epoch_end(epoch=i, logs=epoch_logs)
+            print('{}/{}: Validation:'.format(i + 1, epochs))
             print('Loss = {:.5f} | Accuracy = {:.2%} | Precision = {:.2%} | Recall = {:.2%}'.format(
                 loss / sum_factors, acc / sum_factors, prec / sum_factors, rec / sum_factors)
             )
-            epoch_logs.update({'val_loss': loss, 'val_acc': acc, 'val_precision': prec, 'val_recall': rec})
-            cbs.on_epoch_end(epoch=i, logs=epoch_logs)
             der = self.calculate_der()
             if isinstance(der, Real):
                 print('DER = {:.2%}'.format(der), end='  ')
