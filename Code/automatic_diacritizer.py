@@ -4,7 +4,7 @@ from random import shuffle
 from language_model import GeminationModel, LastDiacriticModel, MorphologicalDiacriticsModel
 
 
-def process(source, destination, min_words, min_diac_rate):
+def process(source, destination, min_words, min_diac_rate, max_chars_count):
     with destination.open('w', encoding='UTF-8') as dest_file:
         if source.is_dir():
             for file_path in filter(lambda x: x.is_file(), source.iterdir()):
@@ -17,7 +17,7 @@ def process(source, destination, min_words, min_diac_rate):
                                   for s in sentences]):
                     filtered_sentences.add(' '.join(sf))
                 for sf in filtered_sentences:
-                    print(sf, file=dest_file)
+                    print(sf[:max_chars_count].rstrip(), file=dest_file)
         elif source.is_file():
             print('Parsing', source, '...')
             sentences = read_text_file(str(source))
@@ -28,7 +28,7 @@ def process(source, destination, min_words, min_diac_rate):
                               for s in sentences]):
                 filtered_sentences.add(' '.join(sf))
             for sf in filtered_sentences:
-                print(sf, file=dest_file)
+                print(sf[:max_chars_count].rstrip(), file=dest_file)
         else:
             root_p.error('{} is neither a file nor a directory!'.format(source))
             root_p.exit(-2)
@@ -137,6 +137,8 @@ if __name__ == '__main__':
     preprocessing_p.add_argument('--min-diac-rate', '-d', type=float, default=0.8,
                                  help='Minimum rate of the diacritized words to the number of arabic words in the '
                                       'sentence.')
+    preprocessing_p.add_argument('--max-chars-count', '-c', type=int, default=2000,
+                                 help='Maximum number of characters to keep in a long sentence.')
     partition_p = subparsers.add_parser('partition', help='Divide a dataset to train, validation and test fragments.')
     partition_p.add_argument('dataset_file', type=Path, help='The preprocessed dataset file.')
     partition_p.add_argument('--train-ratio', '-t', type=float, default=0.9, help='Ratio of data for training.')
@@ -168,10 +170,11 @@ if __name__ == '__main__':
         root_p.print_help(sys.stderr)
         root_p.exit(-1)
     if 'source' in vars(args):
-        process(args.source, args.destination, args.min_words, args.min_diac_rate)
+        process(args.source, args.destination, args.min_words, args.min_diac_rate, args.max_chars_count)
     elif 'dataset_file' in vars(args):
         partition(args.dataset_file, args.train_ratio, args.val_test_ratio, args.shuffle_every)
     elif 'model_train' in vars(args):
-        train(args.model_train, args.config, args.train_data, args.val_data, args.iterations, args.weights_dir, args.early_stop)
+        train(args.model_train, args.config, args.train_data, args.val_data, args.iterations, args.weights_dir,
+              args.early_stop)
     elif 'model_test' in vars(args):
         test(args.model_test, args.config, args.test_data, args.weights_dir)

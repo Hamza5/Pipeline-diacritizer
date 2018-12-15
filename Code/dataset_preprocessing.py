@@ -22,6 +22,7 @@ SPACES = ' \t'
 PUNCTUATION = SENTENCE_SEPARATORS + '۩﴿﴾«»؛،ـ' +\
               ''.join([chr(x) for x in range(0x0021, 0x0030)]+[chr(x) for x in range(0x003A, 0x0040)] +
                       [chr(x) for x in range(0x005B, 0x0060)]+[chr(x) for x in range(0x007B, 0x007F)])
+SPACE_PUNCTUATION_REGEXP = re.compile('[' + SPACES + PUNCTUATION + ']+')
 DATETIME_REGEXP = re.compile(r'(?:\d+[-/:\s]+)+\d+')
 NUMBER_REGEXP = re.compile(r'\d+(?:\.\d+)?')
 DOTS_NO_URL = r'(?<!\w)(['+SENTENCE_SEPARATORS+']+)(?!\w)'
@@ -164,7 +165,7 @@ def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8):
                 arabic_word_count += 1
                 if word_chars & ARABIC_DIACRITICS != set():
                     diac_word_count += 1
-            token = token.strip(SPACES+PUNCTUATION)
+            token = SPACE_PUNCTUATION_REGEXP.sub('', token)
             if token != '' and (set(token).issubset(ARABIC_SYMBOLS) or NUMBER_REGEXP.match(token)):
                 new_sentence.append(token)
         if arabic_word_count >= min_words:
