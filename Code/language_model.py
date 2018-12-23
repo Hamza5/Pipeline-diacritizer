@@ -116,8 +116,8 @@ class DiacritizationModel(ABC):
                 target = self.train_targets[k]
                 batch_logs = {'batch': k, 'size': target.shape[0]}
                 cbs.on_batch_begin(batch=k, logs=batch_logs)
-                if len(target.shape) > 1:
-                    target = utils.to_categorical(self.train_targets[k], target.shape[-1])
+                if self.model.layers[-1].output_shape[-1] > 1:
+                    target = utils.to_categorical(self.train_targets[k], self.model.layers[-1].output_shape[-1])
                 l, a, p, r = self.model.train_on_batch(
                     add_time_steps(utils.to_categorical(self.train_inputs[k], len(CHAR2INDEX)),
                                    self.time_steps, word_level),
@@ -143,8 +143,8 @@ class DiacritizationModel(ABC):
             sum_factors = 0
             for k in range(len(self.val_targets)):
                 target = self.val_targets[k]
-                if len(target.shape) > 1:
-                    target = utils.to_categorical(self.val_targets[k], target.shape[-1])
+                if self.model.layers[-1].output_shape[-1] > 1:
+                    target = utils.to_categorical(self.val_targets[k], self.model.layers[-1].output_shape[-1])
                 l, a, p, r = self.model.test_on_batch(
                     add_time_steps(utils.to_categorical(self.val_inputs[k], len(CHAR2INDEX)),
                                    self.time_steps, word_level),
@@ -184,8 +184,8 @@ class DiacritizationModel(ABC):
         sum_factors = 0
         for k in range(len(test_targets)):
             target = test_targets[k]
-            if len(target.shape) > 1:
-                target = utils.to_categorical(test_targets[k], target.shape[-1])
+            if self.model.layers[-1].output_shape[-1] > 1:
+                target = utils.to_categorical(test_targets[k], self.model.layers[-1].output_shape[-1])
             l, a, p, r = self.model.test_on_batch(
                 add_time_steps(utils.to_categorical(test_inputs[k], len(CHAR2INDEX)),
                                self.time_steps, word_level),
