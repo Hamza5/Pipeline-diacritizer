@@ -26,7 +26,7 @@ SPACE_PUNCTUATION_REGEXP = re.compile('[' + SPACES + PUNCTUATION + ']+')
 DATETIME_REGEXP = re.compile(r'(?:\d+[-/:\s]+)+\d+')
 NUMBER_REGEXP = re.compile(r'\d+(?:\.\d+)?')
 DOTS_NO_URL = r'(?<!\w)(['+SENTENCE_SEPARATORS+']+)(?!\w)'
-WORD_TOKENIZATION_REGEXP = re.compile('([' + ''.join(ARABIC_SYMBOLS) + ']+)')
+WORD_TOKENIZATION_REGEXP = re.compile('([' + ''.join(ARABIC_SYMBOLS) + ']+|\d+(?:\.\d+)?)')
 SENTENCE_TOKENIZATION_REGEXP = re.compile(DOTS_NO_URL + '|' + XML_TAG)
 CHAR2INDEX = dict((l, n) for n, l in enumerate(sorted(ARABIC_LETTERS - {'ـ'})))
 CHAR2INDEX.update(dict((v, k) for k, v in enumerate([' ', '0'], len(CHAR2INDEX))))
@@ -237,7 +237,7 @@ def add_time_steps(one_hot_matrix, time_steps, word_level):
     X = np.empty((
         one_hot_matrix.shape[0] if not word_level else space_indices.shape[0], time_steps, one_hot_matrix.shape[1]
     ))
-    offset = time_steps - 1 if not word_level else time_steps - space_indices[0]
+    offset = time_steps - 1 if not word_level else max(time_steps - space_indices[0], 1)
     padded_one_hot = np.concatenate((np.zeros((offset, one_hot_matrix.shape[1])), one_hot_matrix))
     if not word_level:
         for i in range(X.shape[0]):
