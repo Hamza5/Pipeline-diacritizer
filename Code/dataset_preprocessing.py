@@ -72,6 +72,26 @@ def extract_diacritics(text):
         diacritics.append('')
     return diacritics
 
+def extract_diacritics_2(text):
+    """
+    Return the diacritics from the text while keeping their original positions including the Shadda marks.
+    :param text: str, the diacritized text.
+    :return: list, the diacritics. Positions with double diacritics have a tuple as elements.
+    """
+    assert isinstance(text, str)
+    diacritics = []
+    for i in range(1, len(text)):
+        if text[i] in ARABIC_DIACRITICS:
+            if text[i-1] == NAME2DIACRITIC['Shadda']:
+                diacritics[-1] = (text[i-1], text[i])
+            else:
+                diacritics.append(text[i])
+        elif text[i - 1] not in ARABIC_DIACRITICS:
+            diacritics.append('')
+    if text[-1] not in ARABIC_DIACRITICS:
+        diacritics.append('')
+    return diacritics
+
 
 def merge_diacritics(undiacritized_text, diacritics):
     """
