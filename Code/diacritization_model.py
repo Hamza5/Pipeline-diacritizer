@@ -2,11 +2,14 @@
 Module containing the new diacritization model.
 """
 import os.path
+import pickle
 from collections import Iterable
 
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
+from tensorflow.keras.callbacks import ModelCheckpoint, LambdaCallback
 from tensorflow.keras.layers import LSTM, Dense, Flatten, Bidirectional, Input
 from tensorflow.keras.metrics import binary_accuracy, categorical_accuracy
 from tensorflow.keras.optimizers import Adadelta
@@ -43,8 +46,7 @@ class DiacritizationModel:
     TIME_STEPS = 10
     OPTIMIZER = Adadelta()
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, save_dir='.'):
         self.input_layer = Input(shape=(self.TIME_STEPS, len(CHAR2INDEX)))
         self.inner_layers = [
             Bidirectional(LSTM(128, return_sequences=True, unroll=True)),
@@ -60,11 +62,20 @@ class DiacritizationModel:
         self.model = Model(inputs=self.input_layer, outputs=[self.output_shadda_layer, self.output_haraka_layer])
         self.model.compile(self.OPTIMIZER,
                            {'output_haraka': 'categorical_crossentropy', 'output_shadda': 'binary_crossentropy'},
-                           {'output_haraka': [categorical_accuracy, precision, recall], 'output_shadda': [binary_accuracy, precision, recall]})
+                           {'output_haraka': [categorical_accuracy, precision, recall],
+                            'output_shadda': [binary_accuracy, precision, recall]})
+        self.values_history = dict((k, []) for k in self.model.metrics_names + ['val_'+x for x in self.model.metrics_names])
+        self.save_dir = save_dir
+        if os.path.isfile(self.get_history_file_path()):
+            with open(self.get_history_file_path(), 'rb') as history_file:
+                self.values_history = pickle.load(history_file)
 
-    def generate_file_name(self):
+    def get_weights_file_path(self):
         layer_shapes = [str(l.output_shape[-1]) for l in self.inner_layers]
-        return type(self).__name__ + '_' + '-'.join(layer_shapes) + '.h5'
+        return os.path.join(self.save_dir, type(self).__name__ + '_' + '-'.join(layer_shapes) + '.h5')
+
+    def get_history_file_path(self):
+        return os.path.join(self.save_dir, type(self).__name__ + '_history.pkl')
 
     @staticmethod
     def diacritic_to_index(diacritic):
@@ -89,6 +100,15 @@ class DiacritizationModel:
             inputs.append(text_indices)
         return inputs, targets
 
+    def save_history(self, epoch, logs):
+        for name in self.values_history.keys():
+            self.values_history[name].append(logs[name])
+        with open(self.get_history_file_path(), 'wb') as history_file:
+            pickle.dump(self.values_history, history_file)
+        plt.plot(np.arange(len(self.values_history['loss']))+1, self.values_history['loss'], label='Train')
+        plt.plot(np.arange(len(self.values_history['loss']))+1, self.values_history['val_loss'], label='Validation')
+        plt.show()
+
     def train(self, train_sentences, val_sentences, epochs):
         train_ins, train_outs = DiacritizationModel.generate_dataset(train_sentences)
         val_ins, val_outs = DiacritizationModel.generate_dataset(val_sentences)
@@ -104,7 +124,10 @@ class DiacritizationModel:
         harakat_weights = np.max(harakat_counts) / (harakat_counts + 1)
         self.model.fit_generator(DiacritizedTextDataset(train_ins, train_outs), epochs=epochs,
                                  validation_data=DiacritizedTextDataset(val_ins, val_outs),
-                                 class_weight=[{0: 1, 1: shadda_weight}, dict(enumerate(harakat_weights))])
+                                 class_weight=[{0: 1, 1: shadda_weight}, dict(enumerate(harakat_weights))],
+                                 callbacks=[ModelCheckpoint(self.get_weights_file_path(),
+                                                            save_weights_only=True, save_best_only=True),
+                                            LambdaCallback(on_epoch_end=self.save_history)])
 
     def test(self, test_sentences):
         test_ins, test_outs = DiacritizationModel.generate_dataset(test_sentences)
@@ -112,12 +135,12 @@ class DiacritizationModel:
         for name, value in zip(self.model.metrics_names, values):
             print('{}: {}'.format(name, value))
 
-    def save(self, dir_path='.'):
-        self.model.save_weights(os.path.join(dir_path, self.generate_file_name()))
+    def save(self):
+        self.model.save_weights(self.get_weights_file_path())
 
-    def load(self, dir_path='.'):
-        file_path = os.path.join(dir_path, self.generate_file_name())
-        if os.path.exists(file_path):
+    def load(self):
+        file_path = self.get_weights_file_path()
+        if os.path.isfile(file_path):
             self.model.load_weights(file_path)
 
 
@@ -140,7 +163,7 @@ class DiacritizedTextDataset(Sequence):
 
 if __name__ == '__main__':
     train_sents = []
-    with open('D:/MSA_dataset_train.txt', 'rt', encoding='utf-8') as dataset_file:
+    with open('D:/MSA_dataset_test.txt', 'rt', encoding='utf-8') as dataset_file:
         for line in dataset_file:
             train_sents.append(line.rstrip('\n'))
     val_sents = []
@@ -150,5 +173,4 @@ if __name__ == '__main__':
     model = DiacritizationModel()
     model.load()
     model.train(train_sents, val_sents, 1)
-    model.save()
     model.test(val_sents)
