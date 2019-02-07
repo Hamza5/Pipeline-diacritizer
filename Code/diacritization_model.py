@@ -1,15 +1,41 @@
 """
 Module containing the new diacritization model.
 """
+import os.path
 from collections import Iterable
 
 import numpy as np
+import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.layers import LSTM, Dense, Flatten, Bidirectional, Input
+from tensorflow.keras.metrics import binary_accuracy, categorical_accuracy
 from tensorflow.keras.optimizers import Adadelta
 from tensorflow.keras.utils import Sequence, to_categorical
 
 from dataset_preprocessing import NAME2DIACRITIC, CHAR2INDEX, extract_diacritics_2, clear_diacritics, add_time_steps
+
+
+def precision(y_true, y_pred):
+    """Precision metric.
+    Only computes a batch-wise average of precision. Computes the precision, a
+    metric for multi-label classification of how many selected items are
+    relevant.
+    """
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
+
+def recall(y_true, y_pred):
+    """Recall metric.
+    Only computes a batch-wise average of recall. Computes the recall, a metric
+    for multi-label classification of how many relevant items are selected.
+    """
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
 
 
 class DiacritizationModel:
@@ -32,6 +58,9 @@ class DiacritizationModel:
         self.output_shadda_layer = Dense(1, activation='sigmoid', name='output_shadda')(previous_layer)
         self.output_haraka_layer = Dense(8, activation='softmax', name='output_haraka')(previous_layer)
         self.model = Model(inputs=self.input_layer, outputs=[self.output_shadda_layer, self.output_haraka_layer])
+        self.model.compile(self.OPTIMIZER,
+                           {'output_haraka': 'categorical_crossentropy', 'output_shadda': 'binary_crossentropy'},
+                           {'output_haraka': [categorical_accuracy, precision, recall], 'output_shadda': [binary_accuracy, precision, recall]})
 
     def generate_file_name(self):
         layer_shapes = [str(l.output_shape[-1]) for l in self.inner_layers]
@@ -73,12 +102,23 @@ class DiacritizationModel:
                 harakat_counts[i] += harakat_out.count(i)
         shadda_weight = (total - shadda_count) / (shadda_count + 1)
         harakat_weights = np.max(harakat_counts) / (harakat_counts + 1)
-        self.model.compile(self.OPTIMIZER,
-                           {'output_haraka': 'categorical_crossentropy', 'output_shadda': 'binary_crossentropy'},
-                           {'output_haraka': 'categorical_accuracy', 'output_shadda': 'binary_accuracy'})
         self.model.fit_generator(DiacritizedTextDataset(train_ins, train_outs), epochs=epochs,
                                  validation_data=DiacritizedTextDataset(val_ins, val_outs),
                                  class_weight=[{0: 1, 1: shadda_weight}, dict(enumerate(harakat_weights))])
+
+    def test(self, test_sentences):
+        test_ins, test_outs = DiacritizationModel.generate_dataset(test_sentences)
+        values = self.model.evaluate_generator(DiacritizedTextDataset(test_ins, test_outs))
+        for name, value in zip(self.model.metrics_names, values):
+            print('{}: {}'.format(name, value))
+
+    def save(self, dir_path='.'):
+        self.model.save_weights(os.path.join(dir_path, self.generate_file_name()))
+
+    def load(self, dir_path='.'):
+        file_path = os.path.join(dir_path, self.generate_file_name())
+        if os.path.exists(file_path):
+            self.model.load_weights(file_path)
 
 
 class DiacritizedTextDataset(Sequence):
@@ -108,4 +148,7 @@ if __name__ == '__main__':
         for line in dataset_file:
             val_sents.append(line.rstrip('\n'))
     model = DiacritizationModel()
+    model.load()
     model.train(train_sents, val_sents, 1)
+    model.save()
+    model.test(val_sents)
