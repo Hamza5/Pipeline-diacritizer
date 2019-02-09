@@ -5,7 +5,6 @@ import os.path
 import pickle
 from collections import Iterable
 
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
@@ -83,6 +82,11 @@ class DiacritizationModel:
                 NAME2DIACRITIC['Fathatan'], NAME2DIACRITIC['Dammatan'], NAME2DIACRITIC['Kasratan']].index(diacritic)
 
     @staticmethod
+    def index_to_diacritic(index):
+        return ['', NAME2DIACRITIC['Fatha'], NAME2DIACRITIC['Damma'],  NAME2DIACRITIC['Kasra'], NAME2DIACRITIC['Sukun'],
+                NAME2DIACRITIC['Fathatan'], NAME2DIACRITIC['Dammatan'], NAME2DIACRITIC['Kasratan']][index]
+
+    @staticmethod
     def generate_dataset(sentences):
         assert isinstance(sentences, Iterable)
         targets = []
@@ -105,9 +109,6 @@ class DiacritizationModel:
             self.values_history[name].append(logs[name])
         with open(self.get_history_file_path(), 'wb') as history_file:
             pickle.dump(self.values_history, history_file)
-        plt.plot(np.arange(len(self.values_history['loss']))+1, self.values_history['loss'], label='Train')
-        plt.plot(np.arange(len(self.values_history['loss']))+1, self.values_history['val_loss'], label='Validation')
-        plt.show()
 
     def train(self, train_sentences, val_sentences, epochs):
         train_ins, train_outs = DiacritizationModel.generate_dataset(train_sentences)
@@ -143,6 +144,14 @@ class DiacritizationModel:
         if os.path.isfile(file_path):
             self.model.load_weights(file_path)
 
+    def diacritize(self, text):
+        text_indices = [CHAR2INDEX[x] for x in text]
+        input = add_time_steps(to_categorical(text_indices, len(CHAR2INDEX)), DiacritizationModel.TIME_STEPS, False)
+        shadda_pred, harakat_pred = self.model.predict_on_batch(input)
+        shaddat = [NAME2DIACRITIC['Shadda'] if x >= 0.5 else '' for x in shadda_pred]
+        harakat = [self.index_to_diacritic(np.argmax(x)) for x in harakat_pred]
+        return ''.join([l+sh+h for l, sh, h in zip(text, shaddat, harakat)])
+
 
 class DiacritizedTextDataset(Sequence):
 
@@ -163,14 +172,39 @@ class DiacritizedTextDataset(Sequence):
 
 if __name__ == '__main__':
     train_sents = []
-    with open('D:/MSA_dataset_test.txt', 'rt', encoding='utf-8') as dataset_file:
+    with open('D:/MSA_dataset_train.txt', 'rt', encoding='utf-8') as dataset_file:
         for line in dataset_file:
             train_sents.append(line.rstrip('\n'))
     val_sents = []
     with open('D:/MSA_dataset_val.txt', 'rt', encoding='utf-8') as dataset_file:
         for line in dataset_file:
             val_sents.append(line.rstrip('\n'))
+    test_sents = []
+    with open('D:/MSA_dataset_test.txt', 'rt', encoding='utf-8') as dataset_file:
+        for line in dataset_file:
+            test_sents.append(line.rstrip('\n'))
     model = DiacritizationModel()
     model.load()
-    model.train(train_sents, val_sents, 1)
-    model.test(val_sents)
+    from random import sample
+    for s in sample(test_sents, 5):
+        print(model.diacritize(clear_diacritics(s)))
+        print(s)
+    # model.train(train_sents, val_sents, 5)
+    # model.test(test_sents)
+    # plt.figure(figsize=(13, 4))
+    # loss_axes = plt.subplot(1, 3, 1)
+    # loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['loss'], label='Train')
+    # loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_loss'], label='Validation')
+    # loss_axes.set_title('Loss')
+    # loss_axes.legend()
+    # shadda_axes = plt.subplot(1, 3, 2)
+    # shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_shadda_binary_accuracy'], label='Train')
+    # shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_shadda_binary_accuracy'], label='Validation')
+    # shadda_axes.set_title('Shadda accuracy')
+    # shadda_axes.legend()
+    # harakat_axes = plt.subplot(1, 3, 3)
+    # harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_haraka_categorical_accuracy'], label='Train')
+    # harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_haraka_categorical_accuracy'], label='Validation')
+    # harakat_axes.set_title('Harakat accuracy')
+    # harakat_axes.legend()
+    # plt.show()
