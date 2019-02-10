@@ -9,7 +9,7 @@ import numpy as np
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.callbacks import ModelCheckpoint, LambdaCallback
-from tensorflow.keras.layers import LSTM, Dense, Flatten, Bidirectional, Input
+from tensorflow.keras.layers import LSTM, Dense, Conv1D, Flatten, Bidirectional, Input, Layer
 from tensorflow.keras.metrics import binary_accuracy, categorical_accuracy
 from tensorflow.keras.optimizers import Adadelta
 from tensorflow.keras.utils import Sequence, to_categorical
@@ -48,16 +48,20 @@ class DiacritizationModel:
     def __init__(self, save_dir='.'):
         self.input_layer = Input(shape=(self.TIME_STEPS, len(CHAR2INDEX)))
         self.inner_layers = [
-            Bidirectional(LSTM(128, return_sequences=True, unroll=True)),
             Bidirectional(LSTM(64, return_sequences=True, unroll=True)),
+            Bidirectional(LSTM(64, return_sequences=True, unroll=True)),
+            Conv1D(128, 3, activation='tanh', padding='valid'),
             Flatten(),
-            Dense(32, activation='relu')
+            (Dense(8, activation='tanh'), Dense(64, activation='tanh'))
         ]
         previous_layer = self.input_layer
-        for layer in self.inner_layers:
+        for layer in self.inner_layers[:-1]:
             previous_layer = layer(previous_layer)
-        self.output_shadda_layer = Dense(1, activation='sigmoid', name='output_shadda')(previous_layer)
-        self.output_haraka_layer = Dense(8, activation='softmax', name='output_haraka')(previous_layer)
+        shadda_side, haraka_side = self.inner_layers[-1]
+        shadda_side = shadda_side(previous_layer)
+        haraka_side = haraka_side(previous_layer)
+        self.output_shadda_layer = Dense(1, activation='sigmoid', name='output_shadda')(shadda_side)
+        self.output_haraka_layer = Dense(8, activation='softmax', name='output_haraka')(haraka_side)
         self.model = Model(inputs=self.input_layer, outputs=[self.output_shadda_layer, self.output_haraka_layer])
         self.model.compile(self.OPTIMIZER,
                            {'output_haraka': 'categorical_crossentropy', 'output_shadda': 'binary_crossentropy'},
@@ -70,11 +74,12 @@ class DiacritizationModel:
                 self.values_history = pickle.load(history_file)
 
     def get_weights_file_path(self):
-        layer_shapes = [str(l.output_shape[-1]) for l in self.inner_layers]
+        layer_shapes = [str(l.output_shape[-1]) if isinstance(l, Layer)
+                        else ','.join([str(sl.output_shape[-1]) for sl in l]) for l in self.inner_layers]
         return os.path.join(self.save_dir, type(self).__name__ + '_' + '-'.join(layer_shapes) + '.h5')
 
     def get_history_file_path(self):
-        return os.path.join(self.save_dir, type(self).__name__ + '_history.pkl')
+        return self.get_weights_file_path()[:-3]+'_history.pkl'
 
     @staticmethod
     def diacritic_to_index(diacritic):
@@ -171,40 +176,45 @@ class DiacritizedTextDataset(Sequence):
 
 
 if __name__ == '__main__':
+    print('Loading train sentences...')
     train_sents = []
     with open('D:/MSA_dataset_train.txt', 'rt', encoding='utf-8') as dataset_file:
         for line in dataset_file:
             train_sents.append(line.rstrip('\n'))
+    print('Loading validation sentences...')
     val_sents = []
     with open('D:/MSA_dataset_val.txt', 'rt', encoding='utf-8') as dataset_file:
         for line in dataset_file:
             val_sents.append(line.rstrip('\n'))
+    print('Loading test sentences...')
     test_sents = []
     with open('D:/MSA_dataset_test.txt', 'rt', encoding='utf-8') as dataset_file:
         for line in dataset_file:
             test_sents.append(line.rstrip('\n'))
+    print('Making model and training...')
     model = DiacritizationModel()
     model.load()
+    model.train(train_sents, val_sents, 5)
+    model.test(test_sents)
     from random import sample
     for s in sample(test_sents, 5):
         print(model.diacritize(clear_diacritics(s)))
         print(s)
-    # model.train(train_sents, val_sents, 5)
-    # model.test(test_sents)
-    # plt.figure(figsize=(13, 4))
-    # loss_axes = plt.subplot(1, 3, 1)
-    # loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['loss'], label='Train')
-    # loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_loss'], label='Validation')
-    # loss_axes.set_title('Loss')
-    # loss_axes.legend()
-    # shadda_axes = plt.subplot(1, 3, 2)
-    # shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_shadda_binary_accuracy'], label='Train')
-    # shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_shadda_binary_accuracy'], label='Validation')
-    # shadda_axes.set_title('Shadda accuracy')
-    # shadda_axes.legend()
-    # harakat_axes = plt.subplot(1, 3, 3)
-    # harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_haraka_categorical_accuracy'], label='Train')
-    # harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_haraka_categorical_accuracy'], label='Validation')
-    # harakat_axes.set_title('Harakat accuracy')
-    # harakat_axes.legend()
-    # plt.show()
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(13, 4))
+    loss_axes = plt.subplot(1, 3, 1)
+    loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['loss'], label='Train')
+    loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_loss'], label='Validation')
+    loss_axes.set_title('Loss')
+    loss_axes.legend()
+    shadda_axes = plt.subplot(1, 3, 2)
+    shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_shadda_binary_accuracy'], label='Train')
+    shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_shadda_binary_accuracy'], label='Validation')
+    shadda_axes.set_title('Shadda accuracy')
+    shadda_axes.legend()
+    harakat_axes = plt.subplot(1, 3, 3)
+    harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_haraka_categorical_accuracy'], label='Train')
+    harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_haraka_categorical_accuracy'], label='Validation')
+    harakat_axes.set_title('Harakat accuracy')
+    harakat_axes.legend()
+    plt.show()
