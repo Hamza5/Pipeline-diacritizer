@@ -9,7 +9,7 @@ import numpy as np
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.callbacks import ModelCheckpoint, LambdaCallback
-from tensorflow.keras.layers import LSTM, Dense, Conv1D, Flatten, Bidirectional, Input, Layer
+from tensorflow.keras.layers import LSTM, Dense, Conv1D, Flatten, Bidirectional, Input, Layer, Lambda
 from tensorflow.keras.metrics import binary_accuracy, categorical_accuracy
 from tensorflow.keras.optimizers import Adadelta
 from tensorflow.keras.utils import Sequence, to_categorical
@@ -41,11 +41,19 @@ def recall(y_true, y_pred):
 
 
 class DiacritizationModel:
+    """
+    Class containing the required functions for training, testing and making predictions for an automatic diacritization
+    system.
+    """
 
     TIME_STEPS = 10
     OPTIMIZER = Adadelta()
 
     def __init__(self, save_dir='.'):
+        """
+        Construct a automatic diacritization system model.
+        :param save_dir: the path of the directory containing the weights and the history files.
+        """
         self.input_layer = Input(shape=(self.TIME_STEPS, len(CHAR2INDEX)))
         self.inner_layers = [
             Bidirectional(LSTM(64, return_sequences=True, unroll=True)),
@@ -60,14 +68,18 @@ class DiacritizationModel:
         shadda_side, haraka_side = self.inner_layers[-1]
         shadda_side = shadda_side(previous_layer)
         haraka_side = haraka_side(previous_layer)
-        self.output_shadda_layer = Dense(1, activation='sigmoid', name='output_shadda')(shadda_side)
+        self.output_shadda_layer = Dense(1, activation='sigmoid')(shadda_side)
         self.output_haraka_layer = Dense(8, activation='softmax', name='output_haraka')(haraka_side)
-        self.model = Model(inputs=self.input_layer, outputs=[self.output_shadda_layer, self.output_haraka_layer])
+        self.shadda_corrections_layer = Lambda(self.shadda_post_corrections, name='output_shadda')(
+            [self.input_layer, self.output_shadda_layer, self.output_haraka_layer]
+        )
+        self.model = Model(inputs=self.input_layer, outputs=[self.shadda_corrections_layer, self.output_haraka_layer])
         self.model.compile(self.OPTIMIZER,
                            {'output_haraka': 'categorical_crossentropy', 'output_shadda': 'binary_crossentropy'},
                            {'output_haraka': [categorical_accuracy, precision, recall],
                             'output_shadda': [binary_accuracy, precision, recall]})
-        self.values_history = dict((k, []) for k in self.model.metrics_names + ['val_'+x for x in self.model.metrics_names])
+        self.values_history = dict((k, []) for k in self.model.metrics_names + ['val_'+x for x in
+                                                                                self.model.metrics_names])
         self.save_dir = save_dir
         if os.path.isfile(self.get_history_file_path()):
             with open(self.get_history_file_path(), 'rb') as history_file:
@@ -103,11 +115,33 @@ class DiacritizationModel:
             harakat_indices = []
             for d in diacritics:
                 shadda_positions.append(1 if d and d[0] == NAME2DIACRITIC['Shadda'] else 0)
-                harakat_indices.append(DiacritizationModel.diacritic_to_index(d[-1]) if d and d[-1] != NAME2DIACRITIC['Shadda'] else 0)
+                harakat_indices.append(DiacritizationModel.diacritic_to_index(d[-1])
+                                       if d and d[-1] != NAME2DIACRITIC['Shadda'] else 0)
             text_indices = [CHAR2INDEX[x] for x in letters_text]
             targets.append((shadda_positions, harakat_indices))
             inputs.append(text_indices)
         return inputs, targets
+
+    @staticmethod
+    def shadda_post_corrections(in_out):
+        """
+        Correct any obviously misplaced shadda marks according to the character and its context.
+        :param in_out: input layer and prediction layer outputs.
+        :return: corrected predictions.
+        """
+        inputs, pred_shadda, pred_haraka = in_out
+        # Drop the shadda from the forbidden letters
+        forbidden_chars = [CHAR2INDEX[' '], CHAR2INDEX['ا'], CHAR2INDEX['ء'], CHAR2INDEX['أ'], CHAR2INDEX['إ'],
+                           CHAR2INDEX['آ'], CHAR2INDEX['ى'], CHAR2INDEX['ئ'], CHAR2INDEX['ة'], CHAR2INDEX['0']]
+        char_index = K.argmax(inputs[:, -1], axis=-1)
+        allowed_instances = K.cast(K.not_equal(char_index, forbidden_chars[0]), 'float32')
+        for char in forbidden_chars[1:]:
+            allowed_instances *= K.cast(K.not_equal(char_index, char), 'float32')
+        allowed_instances *= K.sum(inputs[:, -2], axis=-1)  # Special requirement for the first letter in the sentence.
+        # Drop the shadda from the letter following the space
+        previous_char_index = K.argmax(inputs[:, -2], axis=-1)
+        allowed_instances *= K.cast(K.not_equal(previous_char_index, CHAR2INDEX[' ']), 'float32')
+        return K.reshape(allowed_instances, (-1, 1)) * pred_shadda
 
     def save_history(self, epoch, logs):
         for name in self.values_history.keys():
@@ -133,7 +167,7 @@ class DiacritizationModel:
                                  class_weight=[{0: 1, 1: shadda_weight}, dict(enumerate(harakat_weights))],
                                  callbacks=[ModelCheckpoint(self.get_weights_file_path(),
                                                             save_weights_only=True, save_best_only=True),
-                                            LambdaCallback(on_epoch_end=self.save_history)])
+                                            LambdaCallback(on_epoch_end=self.save_history)], workers=os.cpu_count())
 
     def test(self, test_sentences):
         test_ins, test_outs = DiacritizationModel.generate_dataset(test_sentences)
@@ -195,6 +229,7 @@ if __name__ == '__main__':
     model = DiacritizationModel()
     model.load()
     model.train(train_sents, val_sents, 5)
+    # os.system('sudo poweroff')
     model.test(test_sents)
     from random import sample
     for s in sample(test_sents, 5):
