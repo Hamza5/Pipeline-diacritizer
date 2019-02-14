@@ -69,11 +69,15 @@ class DiacritizationModel:
         shadda_side = shadda_side(previous_layer)
         haraka_side = haraka_side(previous_layer)
         self.output_shadda_layer = Dense(1, activation='sigmoid')(shadda_side)
-        self.output_haraka_layer = Dense(8, activation='softmax', name='output_haraka')(haraka_side)
+        self.output_haraka_layer = Dense(8, activation='softmax')(haraka_side)
         self.shadda_corrections_layer = Lambda(self.shadda_post_corrections, name='output_shadda')(
             [self.input_layer, self.output_shadda_layer, self.output_haraka_layer]
         )
-        self.model = Model(inputs=self.input_layer, outputs=[self.shadda_corrections_layer, self.output_haraka_layer])
+        self.haraka_corrections_layer = Lambda(self.haraka_post_corrections, name='output_haraka')(
+            [self.input_layer, self.output_haraka_layer, self.output_shadda_layer]
+        )
+        self.model = Model(inputs=self.input_layer, outputs=[self.shadda_corrections_layer,
+                                                             self.haraka_corrections_layer])
         self.model.compile(self.OPTIMIZER,
                            {'output_haraka': 'categorical_crossentropy', 'output_shadda': 'binary_crossentropy'},
                            {'output_haraka': [categorical_accuracy, precision, recall],
@@ -125,8 +129,8 @@ class DiacritizationModel:
     @staticmethod
     def shadda_post_corrections(in_out):
         """
-        Correct any obviously misplaced shadda marks according to the character and its context.
-        :param in_out: input layer and prediction layer outputs.
+        Drop any obviously misplaced shadda marks according to the character and its context.
+        :param in_out: input layer and prediction layers outputs.
         :return: corrected predictions.
         """
         inputs, pred_shadda, pred_haraka = in_out
@@ -141,7 +145,52 @@ class DiacritizationModel:
         # Drop the shadda from the letter following the space
         previous_char_index = K.argmax(inputs[:, -2], axis=-1)
         allowed_instances *= K.cast(K.not_equal(previous_char_index, CHAR2INDEX[' ']), 'float32')
+        # Drop the shadda from the letter having a Sukun
+        allowed_instances *= K.cast(K.not_equal(K.argmax(pred_haraka, axis=1), 4), 'float32') * K.max(pred_haraka,
+                                                                                                      axis=1)
         return K.reshape(allowed_instances, (-1, 1)) * pred_shadda
+
+    @staticmethod
+    def haraka_post_corrections(in_out):
+        """
+        Change any obviously wrong haraka marks according to the character and its context.
+        :param in_out: input layer and prediction layers outputs.
+        :return: corrected predictions.
+        """
+        inputs, pred_haraka, pred_shadda = in_out
+        # Drop haraka from the forbidden letters
+        forbidden_chars = [CHAR2INDEX[' '], CHAR2INDEX['آ'], CHAR2INDEX['ى'], CHAR2INDEX['0']]
+        char_index = K.argmax(inputs[:, -1], axis=-1)
+        mask = K.cast(K.not_equal(char_index, forbidden_chars[0]), 'float32')
+        for forbidden_char in forbidden_chars[1:]:
+            mask *= K.cast(K.not_equal(char_index, forbidden_char), 'float32')
+        mask = K.reshape(mask, (-1, 1))
+        pred_haraka = mask * pred_haraka + (1 - mask) * K.one_hot(0, K.int_shape(pred_haraka)[-1])
+        # Force the correct haraka on some letters
+        forced_diac_chars = {CHAR2INDEX['إ']: 3}
+        for f_diac_char, f_diac in forced_diac_chars.items():
+            mask = K.reshape(K.cast(K.not_equal(char_index, f_diac_char), 'float32'), (-1, 1))
+            pred_haraka = mask * pred_haraka + (1 - mask) * K.one_hot(f_diac, K.int_shape(pred_haraka)[-1])
+        # Force the correct haraka before some long vowels
+        f_prev_diac_chars = {CHAR2INDEX['ا']: 1, CHAR2INDEX['ى']: 1, CHAR2INDEX['ة']: 1}
+        prev_char_index = K.argmax(inputs[:, -2], axis=-1)
+        for fd_char, f_diac in f_prev_diac_chars.items():
+            mask = K.clip(K.cast(K.not_equal(char_index[1:-1], fd_char), 'float32') +
+                          K.cast(K.equal(prev_char_index[1:-1], CHAR2INDEX[' ']), 'float32'), 0, 1)
+            if fd_char == CHAR2INDEX['ا']:
+                mask = K.clip(mask + K.cast(K.equal(char_index[2:], CHAR2INDEX[' ']), 'float32'), 0, 1)
+            mask = K.reshape(K.concatenate([mask, K.ones((2,))], axis=0), (-1, 1))
+            pred_haraka = pred_haraka * mask + (1 - mask) * K.one_hot(f_diac, K.int_shape(pred_haraka)[-1])
+        # Force no sukun and tanween at the beginning of the word
+        mask = K.reshape(
+            K.concatenate([K.zeros((1,)), K.cast(K.not_equal(prev_char_index[1:], CHAR2INDEX[' ']), 'float32')],
+                          axis=0), (-1, 1))
+        pred_haraka = mask * pred_haraka + (1 - mask) * K.constant([1, 1, 1, 1, 0, 0, 0, 0], shape=(1, 8)) * pred_haraka
+        # Allow tanween only at the end of the word
+        mask = K.reshape(K.concatenate([K.cast(K.not_equal(char_index[1:], CHAR2INDEX[' ']), 'float32'), K.zeros((1,))],
+                                       axis=0), (-1, 1))
+        pred_haraka = mask * K.constant([1, 1, 1, 1, 1, 0, 0, 0], shape=(1, 8)) * pred_haraka + (1 - mask) * pred_haraka
+        return pred_haraka
 
     def save_history(self, epoch, logs):
         for name in self.values_history.keys():
@@ -228,28 +277,29 @@ if __name__ == '__main__':
     print('Making model and training...')
     model = DiacritizationModel()
     model.load()
-    model.train(train_sents, val_sents, 5)
+    # model.train(train_sents, val_sents, 5)
     # os.system('sudo poweroff')
-    model.test(test_sents)
+    # model.test(test_sents)
     from random import sample
-    for s in sample(test_sents, 5):
+    for s in sample(test_sents, 10):
+        print('_'*50)
         print(model.diacritize(clear_diacritics(s)))
         print(s)
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(13, 4))
-    loss_axes = plt.subplot(1, 3, 1)
-    loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['loss'], label='Train')
-    loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_loss'], label='Validation')
-    loss_axes.set_title('Loss')
-    loss_axes.legend()
-    shadda_axes = plt.subplot(1, 3, 2)
-    shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_shadda_binary_accuracy'], label='Train')
-    shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_shadda_binary_accuracy'], label='Validation')
-    shadda_axes.set_title('Shadda accuracy')
-    shadda_axes.legend()
-    harakat_axes = plt.subplot(1, 3, 3)
-    harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_haraka_categorical_accuracy'], label='Train')
-    harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_haraka_categorical_accuracy'], label='Validation')
-    harakat_axes.set_title('Harakat accuracy')
-    harakat_axes.legend()
-    plt.show()
+    # import matplotlib.pyplot as plt
+    # plt.figure(figsize=(13, 4))
+    # loss_axes = plt.subplot(1, 3, 1)
+    # loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['loss'], label='Train')
+    # loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_loss'], label='Validation')
+    # loss_axes.set_title('Loss')
+    # loss_axes.legend()
+    # shadda_axes = plt.subplot(1, 3, 2)
+    # shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_shadda_binary_accuracy'], label='Train')
+    # shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_shadda_binary_accuracy'], label='Validation')
+    # shadda_axes.set_title('Shadda accuracy')
+    # shadda_axes.legend()
+    # harakat_axes = plt.subplot(1, 3, 3)
+    # harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_haraka_categorical_accuracy'], label='Train')
+    # harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_haraka_categorical_accuracy'], label='Validation')
+    # harakat_axes.set_title('Harakat accuracy')
+    # harakat_axes.legend()
+    # plt.show()
