@@ -158,29 +158,29 @@ class DiacritizationModel:
         :return: corrected predictions.
         """
         inputs, pred_haraka, pred_shadda = in_out
-        # Drop haraka from the forbidden letters
-        forbidden_chars = [CHAR2INDEX[' '], CHAR2INDEX['آ'], CHAR2INDEX['ى'], CHAR2INDEX['0']]
         char_index = K.argmax(inputs[:, -1], axis=-1)
-        mask = K.cast(K.not_equal(char_index, forbidden_chars[0]), 'float32')
-        for forbidden_char in forbidden_chars[1:]:
-            mask *= K.cast(K.not_equal(char_index, forbidden_char), 'float32')
-        mask = K.reshape(mask, (-1, 1))
-        pred_haraka = mask * pred_haraka + (1 - mask) * K.one_hot(0, K.int_shape(pred_haraka)[-1])
         # Force the correct haraka on some letters
         forced_diac_chars = {CHAR2INDEX['إ']: 3}
         for f_diac_char, f_diac in forced_diac_chars.items():
             mask = K.reshape(K.cast(K.not_equal(char_index, f_diac_char), 'float32'), (-1, 1))
             pred_haraka = mask * pred_haraka + (1 - mask) * K.one_hot(f_diac, K.int_shape(pred_haraka)[-1])
-        # Force the correct haraka before some long vowels
-        f_prev_diac_chars = {CHAR2INDEX['ا']: 1, CHAR2INDEX['ى']: 1, CHAR2INDEX['ة']: 1}
+        # Force the correct haraka before some letters
+        f_prev_diac_chars = {CHAR2INDEX['ى']: 1, CHAR2INDEX['ة']: 1}
         prev_char_index = K.argmax(inputs[:, -2], axis=-1)
         for fd_char, f_diac in f_prev_diac_chars.items():
-            mask = K.clip(K.cast(K.not_equal(char_index[1:-1], fd_char), 'float32') +
-                          K.cast(K.equal(prev_char_index[1:-1], CHAR2INDEX[' ']), 'float32'), 0, 1)
-            if fd_char == CHAR2INDEX['ا']:
-                mask = K.clip(mask + K.cast(K.equal(char_index[2:], CHAR2INDEX[' ']), 'float32'), 0, 1)
-            mask = K.reshape(K.concatenate([mask, K.ones((2,))], axis=0), (-1, 1))
+            mask = K.cast(K.not_equal(char_index[1:], fd_char), 'float32')
+            mask = K.reshape(K.concatenate([mask, K.ones((1,))], axis=0), (-1, 1))
             pred_haraka = pred_haraka * mask + (1 - mask) * K.one_hot(f_diac, K.int_shape(pred_haraka)[-1])
+        # Allow only Fatha, Fathatan, or nothing before ا if it is in the end of the word
+        mask = K.reshape(K.concatenate([K.clip(
+            K.cast(K.not_equal(char_index[1:-1], CHAR2INDEX['ا']), 'float32') +
+            K.cast(K.not_equal(char_index[2:], CHAR2INDEX[' ']), 'float32'), 0, 1), K.ones((2,))], axis=0), (-1, 1))
+        pred_haraka = mask * pred_haraka + (1 - mask) * K.constant([1, 1, 0, 0, 0, 1, 0, 0], shape=(1, 8)) * pred_haraka
+        # Force Fatha on ا if it is not in the end of the word
+        mask = K.reshape(K.concatenate([K.clip(
+            K.cast(K.not_equal(char_index[1:-1], CHAR2INDEX['ا']), 'float32') +
+            K.cast(K.equal(char_index[2:], CHAR2INDEX[' ']), 'float32'), 0, 1), K.ones((2,))], axis=0), (-1, 1))
+        pred_haraka = mask * pred_haraka + (1 - mask) * K.one_hot(1, K.int_shape(pred_haraka)[-1])
         # Force no sukun and tanween at the beginning of the word
         mask = K.reshape(
             K.concatenate([K.zeros((1,)), K.cast(K.not_equal(prev_char_index[1:], CHAR2INDEX[' ']), 'float32')],
@@ -190,6 +190,13 @@ class DiacritizationModel:
         mask = K.reshape(K.concatenate([K.cast(K.not_equal(char_index[1:], CHAR2INDEX[' ']), 'float32'), K.zeros((1,))],
                                        axis=0), (-1, 1))
         pred_haraka = mask * K.constant([1, 1, 1, 1, 1, 0, 0, 0], shape=(1, 8)) * pred_haraka + (1 - mask) * pred_haraka
+        # Drop haraka from the forbidden letters
+        forbidden_chars = [CHAR2INDEX[' '], CHAR2INDEX['0'], CHAR2INDEX['آ'], CHAR2INDEX['ى'], CHAR2INDEX['ا']]
+        mask = K.cast(K.not_equal(char_index, forbidden_chars[0]), 'float32')
+        for forbidden_char in forbidden_chars[1:]:
+            mask *= K.cast(K.not_equal(char_index, forbidden_char), 'float32')
+        mask = K.reshape(mask, (-1, 1))
+        pred_haraka = mask * pred_haraka + (1 - mask) * K.one_hot(0, K.int_shape(pred_haraka)[-1])
         return pred_haraka
 
     def save_history(self, epoch, logs):
@@ -282,8 +289,9 @@ if __name__ == '__main__':
     # model.test(test_sents)
     from random import sample
     for s in sample(test_sents, 10):
-        print('_'*50)
-        print(model.diacritize(clear_diacritics(s)))
+        undiacritized = clear_diacritics(s)
+        print('_'*len(undiacritized))
+        print(model.diacritize(undiacritized))
         print(s)
     # import matplotlib.pyplot as plt
     # plt.figure(figsize=(13, 4))
