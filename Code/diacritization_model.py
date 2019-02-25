@@ -176,7 +176,7 @@ class DiacritizationModel:
             K.cast(K.not_equal(char_index[1:-1], CHAR2INDEX['ا']), 'float32') +
             K.cast(K.not_equal(char_index[2:], CHAR2INDEX[' ']), 'float32'), 0, 1), K.ones((2,))], axis=0), (-1, 1))
         pred_haraka = mask * pred_haraka + (1 - mask) * K.constant([1, 1, 0, 0, 0, 1, 0, 0], shape=(1, 8)) * pred_haraka
-        # Force Fatha on ا if it is not in the end of the word
+        # Force Fatha before ا if it is not in the end of the word
         mask = K.reshape(K.concatenate([K.clip(
             K.cast(K.not_equal(char_index[1:-1], CHAR2INDEX['ا']), 'float32') +
             K.cast(K.equal(char_index[2:], CHAR2INDEX[' ']), 'float32'), 0, 1), K.ones((2,))], axis=0), (-1, 1))
@@ -190,7 +190,16 @@ class DiacritizationModel:
         mask = K.reshape(K.concatenate([K.cast(K.not_equal(char_index[1:], CHAR2INDEX[' ']), 'float32'), K.zeros((1,))],
                                        axis=0), (-1, 1))
         pred_haraka = mask * K.constant([1, 1, 1, 1, 1, 0, 0, 0], shape=(1, 8)) * pred_haraka + (1 - mask) * pred_haraka
-        # Drop haraka from the forbidden letters
+        # Prohibit Fathatan on most letters
+        mask = K.reshape(K.concatenate([K.clip(
+            K.cast(K.not_equal(char_index[1:], CHAR2INDEX[' ']), 'float32') +
+            K.cast(K.not_equal(char_index[:-1], CHAR2INDEX['ء']), 'float32'), 0, 1), K.ones((1,))], axis=0), (-1, 1))
+        mask *= K.reshape(K.cast(K.not_equal(char_index, CHAR2INDEX['ة']), 'float32'), (-1, 1))
+        mask *= K.reshape(K.concatenate([K.clip(
+            K.cast(K.not_equal(char_index[1:-1], CHAR2INDEX['ا']), 'float32') +
+            K.cast(K.not_equal(char_index[2:], CHAR2INDEX[' ']), 'float32'), 0, 1), K.ones((2,))], axis=0), (-1, 1))
+        pred_haraka = mask * K.constant([1, 1, 1, 1, 1, 0, 1, 1], shape=(1, 8)) * pred_haraka + (1 - mask) * pred_haraka
+        # Drop haraka from the forbidden characters
         forbidden_chars = [CHAR2INDEX[' '], CHAR2INDEX['0'], CHAR2INDEX['آ'], CHAR2INDEX['ى'], CHAR2INDEX['ا']]
         mask = K.cast(K.not_equal(char_index, forbidden_chars[0]), 'float32')
         for forbidden_char in forbidden_chars[1:]:
