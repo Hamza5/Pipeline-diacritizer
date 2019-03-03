@@ -88,6 +88,10 @@ class DiacritizationModel:
         if os.path.isfile(self.get_history_file_path()):
             with open(self.get_history_file_path(), 'rb') as history_file:
                 self.values_history = pickle.load(history_file)
+        self.trigram_context = {}
+        self.bigram_context = {}
+        self.vocabulary = set()
+        self.undiacritized_vocabulary = {}
 
     def get_weights_file_path(self):
         layer_shapes = [str(l.output_shape[-1]) if isinstance(l, Layer)
@@ -97,6 +101,30 @@ class DiacritizationModel:
     def get_history_file_path(self):
         return self.get_weights_file_path()[:-3]+'_history.pkl'
 
+    def get_vocabulary_file_path(self):
+        return os.path.join(self.save_dir, type(self).__name__ + '_vocab_context.pkl')
+
+    @staticmethod
+    def levenshtein_distance(s1, s2):
+        # From https://en.wikibooks.org/wiki/Algorithm_Implementation/Strings/Levenshtein_distance
+        if len(s1) < len(s2):
+            return __class__.levenshtein_distance(s2, s1)
+
+        if len(s2) == 0:
+            return len(s1)
+
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[
+                                 j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+
+        return previous_row[-1]
     @staticmethod
     def diacritic_to_index(diacritic):
         return ['', NAME2DIACRITIC['Fatha'], NAME2DIACRITIC['Damma'],  NAME2DIACRITIC['Kasra'], NAME2DIACRITIC['Sukun'],
@@ -215,6 +243,32 @@ class DiacritizationModel:
             pickle.dump(self.values_history, history_file)
 
     def train(self, train_sentences, val_sentences, epochs):
+        for sentence in train_sentences:
+            words = ('<s> '+sentence+' <e>').split(' ')
+            undiac_words = [clear_diacritics(w) for w in words]
+            self.vocabulary.update(words)
+            for w0_u, w1_d, w1_u, w2_u in zip(undiac_words[:-2], words[1:-1], undiac_words[1:-1], undiac_words[2:]):
+                try:
+                    self.undiacritized_vocabulary[w1_u].add(w1_d)
+                except KeyError:
+                    self.undiacritized_vocabulary[w1_u] = {w1_d}
+                try:
+                    try:
+                        self.trigram_context[w0_u, w1_u, w2_u][w1_d] += 1
+                    except KeyError:
+                        self.trigram_context[w0_u, w1_u, w2_u][w1_d] = 1
+                except KeyError:
+                    self.trigram_context[w0_u, w1_u, w2_u] = {w1_d: 1}
+                try:
+                    try:
+                        self.bigram_context[w0_u, w1_u][w1_d] += 1
+                    except KeyError:
+                        self.bigram_context[w0_u, w1_u][w1_d] = 1
+                except KeyError:
+                    self.bigram_context[w0_u, w1_u] = {w1_d: 1}
+        with open(self.get_vocabulary_file_path(), 'wb') as vocab_file:
+            pickle.dump((self.vocabulary, self.undiacritized_vocabulary, self.trigram_context, self.bigram_context),
+                        vocab_file)
         train_ins, train_outs = DiacritizationModel.generate_dataset(train_sentences)
         val_ins, val_outs = DiacritizationModel.generate_dataset(val_sentences)
         total = 0
@@ -247,6 +301,11 @@ class DiacritizationModel:
         file_path = self.get_weights_file_path()
         if os.path.isfile(file_path):
             self.model.load_weights(file_path)
+        vocab_path = self.get_vocabulary_file_path()
+        if os.path.isfile(vocab_path):
+            with open(vocab_path, 'rb') as vocab_file:
+                self.vocabulary, self.undiacritized_vocabulary, self.trigram_context, self.bigram_context =\
+                    pickle.load(vocab_file)
 
     def diacritize(self, text):
         text_indices = [CHAR2INDEX[x] for x in text]
@@ -254,7 +313,36 @@ class DiacritizationModel:
         shadda_pred, harakat_pred = self.model.predict_on_batch(input)
         shaddat = [NAME2DIACRITIC['Shadda'] if x >= 0.5 else '' for x in shadda_pred]
         harakat = [self.index_to_diacritic(np.argmax(x)) for x in harakat_pred]
-        return ''.join([l+sh+h for l, sh, h in zip(text, shaddat, harakat)])
+        d_words = ('<s> '+''.join([l+sh+h for l, sh, h in zip(text, shaddat, harakat)])+' <e>').split(' ')
+        correct_words = []
+        for prev_word, word, next_word in zip(d_words[:-2], d_words[1:-1], d_words[2:]):
+            word_u = clear_diacritics(word)
+            if word not in self.vocabulary and word_u in self.undiacritized_vocabulary.keys():
+                prev_word_u = clear_diacritics(prev_word)
+                next_word_u = clear_diacritics(next_word)
+                try:
+                    best_word = ''
+                    max_frequency = 0
+                    for diacritized_word, frequency in self.trigram_context[prev_word_u, word_u, next_word_u].items():
+                        if frequency > max_frequency:
+                            max_frequency = frequency
+                            best_word = diacritized_word
+                    word = '('+best_word+')'
+                except KeyError:
+                    try:
+                        best_word = ''
+                        max_frequency = 0
+                        for diacritized_word, frequency in self.bigram_context[prev_word_u, word_u].items():
+                            if frequency > max_frequency:
+                                max_frequency = frequency
+                                best_word = diacritized_word
+                        word = '['+best_word+']'
+                    except KeyError:
+                        possible_words = list(self.undiacritized_vocabulary[word_u])
+                        distances = [self.levenshtein_distance(word, w_d) for w_d in possible_words]
+                        word = '{'+possible_words[np.argmin(distances)]+'}'
+            correct_words.append(word)
+        return ' '.join(correct_words)
 
 
 class DiacritizedTextDataset(Sequence):
