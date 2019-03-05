@@ -294,6 +294,29 @@ class DiacritizationModel:
         for name, value in zip(self.model.metrics_names, values):
             print('{}: {}'.format(name, value))
 
+    def der_wer_values(self, test_sentences):
+        correct_d, correct_w, total_d, total_w, correct_dm, correct_wm, total_dm = 0, 0, 0, 0, 0, 0, 0
+        for original_sentce in test_sentences:
+            predicted_sentence = self.diacritize(clear_diacritics(original_sentce))
+            for orig_word, pred_word in zip(original_sentce.split(), predicted_sentence.split()):
+                if orig_word == '0':
+                    continue
+                orig_diacs = np.array([x[::-1] if len(x) == 2 else (x, '') for x in extract_diacritics_2(orig_word)])
+                pred_diacs = np.array([x[::-1] if len(x) == 2 else (x, '') for x in extract_diacritics_2(pred_word)])
+                if orig_diacs.shape[0] == 0:
+                    continue
+                correct_w += np.all(orig_diacs == pred_diacs)
+                correct_wm += np.all(orig_diacs[:-1] == pred_diacs[:-1])
+                total_w += 1
+                cons_shaddat_pos = (orig_diacs[:, 1] == NAME2DIACRITIC['Shadda']) +\
+                                   (pred_diacs[:, 1] == NAME2DIACRITIC['Shadda'])
+                correct_shaddat = np.sum(orig_diacs[cons_shaddat_pos, 1] == pred_diacs[cons_shaddat_pos, 1])
+                correct_d += np.sum(orig_diacs[:, 0] == pred_diacs[:, 0]) + correct_shaddat
+                correct_dm += np.sum(orig_diacs[:-1, 0] == pred_diacs[:-1, 0]) + correct_shaddat
+                total_d += orig_diacs.shape[0] + np.sum(cons_shaddat_pos)
+                total_dm += orig_diacs.shape[0]-1 + np.sum(cons_shaddat_pos)
+        return 1 - correct_d/total_d, 1 - correct_w/total_w, 1 - correct_dm/total_dm, 1 - correct_wm/total_w
+
     def save(self):
         self.model.save_weights(self.get_weights_file_path())
 
@@ -308,6 +331,7 @@ class DiacritizationModel:
                     pickle.load(vocab_file)
 
     def diacritize(self, text):
+        assert isinstance(text, str)
         text_indices = [CHAR2INDEX[x] for x in text]
         input = add_time_steps(to_categorical(text_indices, len(CHAR2INDEX)), DiacritizationModel.TIME_STEPS, False)
         shadda_pred, harakat_pred = self.model.predict_on_batch(input)
@@ -327,7 +351,7 @@ class DiacritizationModel:
                         if frequency > max_frequency:
                             max_frequency = frequency
                             best_word = diacritized_word
-                    word = '('+best_word+')'
+                    word = best_word
                 except KeyError:
                     try:
                         best_word = ''
@@ -336,11 +360,11 @@ class DiacritizationModel:
                             if frequency > max_frequency:
                                 max_frequency = frequency
                                 best_word = diacritized_word
-                        word = '['+best_word+']'
+                        word = best_word
                     except KeyError:
                         possible_words = list(self.undiacritized_vocabulary[word_u])
                         distances = [self.levenshtein_distance(word, w_d) for w_d in possible_words]
-                        word = '{'+possible_words[np.argmin(distances)]+'}'
+                        word = possible_words[np.argmin(distances)]
             correct_words.append(word)
         return ' '.join(correct_words)
 
@@ -390,6 +414,7 @@ if __name__ == '__main__':
         print('_'*len(undiacritized))
         print(model.diacritize(undiacritized))
         print(s)
+    print(model.der_wer_values(test_sents))
     # import matplotlib.pyplot as plt
     # plt.figure(figsize=(13, 4))
     # loss_axes = plt.subplot(1, 3, 1)

@@ -72,6 +72,7 @@ def extract_diacritics(text):
         diacritics.append('')
     return diacritics
 
+
 def extract_diacritics_2(text):
     """
     Return the diacritics from the text while keeping their original positions including the Shadda marks.
