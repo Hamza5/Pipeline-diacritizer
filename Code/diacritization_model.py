@@ -8,7 +8,7 @@ from collections import Iterable
 import numpy as np
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
-from tensorflow.keras.callbacks import ModelCheckpoint, LambdaCallback
+from tensorflow.keras.callbacks import ModelCheckpoint, LambdaCallback, EarlyStopping
 from tensorflow.keras.layers import LSTM, Dense, Conv1D, Flatten, Bidirectional, Input, Layer, Lambda
 from tensorflow.keras.metrics import binary_accuracy, categorical_accuracy
 from tensorflow.keras.optimizers import Adadelta
@@ -242,7 +242,7 @@ class DiacritizationModel:
         with open(self.get_history_file_path(), 'wb') as history_file:
             pickle.dump(self.values_history, history_file)
 
-    def train(self, train_sentences, val_sentences, epochs):
+    def train(self, train_sentences, val_sentences, epochs, early_stop_iter):
         for sentence in train_sentences:
             words = ('<s> '+sentence+' <e>').split(' ')
             undiac_words = [clear_diacritics(w) for w in words]
@@ -286,13 +286,15 @@ class DiacritizationModel:
                                  class_weight=[{0: 1, 1: shadda_weight}, dict(enumerate(harakat_weights))],
                                  callbacks=[ModelCheckpoint(self.get_weights_file_path(),
                                                             save_weights_only=True, save_best_only=True),
-                                            LambdaCallback(on_epoch_end=self.save_history)], workers=os.cpu_count())
+                                            LambdaCallback(on_epoch_end=self.save_history),
+                                            EarlyStopping(patience=early_stop_iter, verbose=1)], workers=os.cpu_count())
 
     def test(self, test_sentences):
         test_ins, test_outs = DiacritizationModel.generate_dataset(test_sentences)
         values = self.model.evaluate_generator(DiacritizedTextDataset(test_ins, test_outs))
         for name, value in zip(self.model.metrics_names, values):
             print('{}: {}'.format(name, value))
+        print('DER={:.2%} | WER={:.2%} | DERm={:.2%} | WERm={:.2%}'.format(*self.der_wer_values(test_sentences)))
 
     def der_wer_values(self, test_sentences):
         correct_d, correct_w, total_d, total_w, correct_dm, correct_wm, total_dm = 0, 0, 0, 0, 0, 0, 0

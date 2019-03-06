@@ -14,12 +14,12 @@ ARABIC_DIACRITICS = frozenset(NAME2DIACRITIC.values())
 ARABIC_LETTERS = frozenset([chr(x) for x in (list(range(0x0621, 0x63B)) + list(range(0x0641, 0x064B)))] + ['ـ'])
 ARABIC_SYMBOLS = ARABIC_LETTERS | ARABIC_DIACRITICS
 EXTRA_SUKUN_REGEXP = re.compile(r'(?<=ال)' + NAME2DIACRITIC['Sukun'])
-YA_REGEXP = re.compile(r'ى(?=['+''.join(ARABIC_DIACRITICS)+r'])')
+# YA_REGEXP = re.compile(r'ى(?=['+''.join(ARABIC_DIACRITICS)+r'])')
 DIACRITIC_SHADDA_REGEXP = re.compile('(['+''.join(ARABIC_DIACRITICS)+'])('+NAME2DIACRITIC['Shadda']+')')
 XML_TAG = r'(?:<.+>)+'
-SENTENCE_SEPARATORS = '.:؟!'
+SENTENCE_SEPARATORS = '،؛.:؟!'
 SPACES = ' \t'
-PUNCTUATION = SENTENCE_SEPARATORS + '۩﴿﴾«»؛،ـ' +\
+PUNCTUATION = SENTENCE_SEPARATORS + '۩﴿﴾«»ـ' +\
               ''.join([chr(x) for x in range(0x0021, 0x0030)]+[chr(x) for x in range(0x003A, 0x0040)] +
                       [chr(x) for x in range(0x005B, 0x0060)]+[chr(x) for x in range(0x007B, 0x007F)])
 SPACE_PUNCTUATION_REGEXP = re.compile('[' + SPACES + PUNCTUATION + ']+')
@@ -132,14 +132,17 @@ def fix_diacritics_errors(diacritized_text):
     diacritized_text = diacritized_text.replace('اً', 'ًا')
     # Fix reversed Shadda-Diacritic
     diacritized_text = DIACRITIC_SHADDA_REGEXP.sub(r'\2\1', diacritized_text)
-    # Fix ى that should be ي
-    diacritized_text = YA_REGEXP.sub('ي', diacritized_text)
+    # Fix ى that should be ي (disabled)
+    # diacritized_text = YA_REGEXP.sub('ي', diacritized_text)
     # Remove the duplicated diacritics by leaving the second one only when there are two incompatible diacritics
     fixed_text = diacritized_text[0]
     for x in diacritized_text[1:]:
         if x in ARABIC_DIACRITICS and fixed_text[-1] in ARABIC_DIACRITICS:
             if fixed_text[-1] != NAME2DIACRITIC['Shadda'] or x == NAME2DIACRITIC['Shadda']:
                 fixed_text = fixed_text[:-1]
+        # Remove the diacritics that are without letters
+        elif x in ARABIC_DIACRITICS and fixed_text[-1] not in ARABIC_LETTERS:
+            continue
         fixed_text += x
     return fixed_text
 
@@ -190,7 +193,7 @@ def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8):
             if token != '' and (set(token).issubset(ARABIC_SYMBOLS) or NUMBER_REGEXP.match(token)):
                 new_sentence.append(token)
         if arabic_word_count >= min_words:
-            if diac_word_count / arabic_word_count > min_word_diac_rate:
+            if diac_word_count / arabic_word_count >= min_word_diac_rate:
                 return new_sentence
     return []
 
