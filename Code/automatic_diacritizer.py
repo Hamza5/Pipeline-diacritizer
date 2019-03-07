@@ -143,7 +143,7 @@ if __name__ == '__main__':
     train_parser.add_argument('--early-stop', '-e', type=int, default=3,
                               help='Maximum number of tries to add when the model performances does not improve.')
     test_parser = subparsers.add_parser('test', description='Test a pretrained model.')
-    test_parser.add_argument('--test-data', '-s', type=Path, required=True, help='Test dataset.')
+    test_parser.add_argument('test_data', type=Path, help='Test dataset.')
     test_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
                              help='Directory containing the weights file for the model.')
     args = root_p.parse_args()
