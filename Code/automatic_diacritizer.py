@@ -85,7 +85,7 @@ def train(train_data_path, val_data_path, iterations, weights_dir, early_stop):
     with val_data_path.open('r', encoding='UTF-8') as val_data_file:
         for line in val_data_file:
             val_data.append(line.rstrip('\n'))
-    model = DiacritizationModel(weights_dir)
+    model = DiacritizationModel(str(weights_dir))
     model.load()
     model.train(train_data, val_data, iterations, early_stop)
 
@@ -95,7 +95,7 @@ def test(test_data_path, weights_dir):
     with test_data_path.open('r', encoding='UTF-8') as test_data_file:
         for line in test_data_file:
             test_data.append(line.rstrip('\n'))
-    model = DiacritizationModel(weights_dir)
+    model = DiacritizationModel(str(weights_dir))
     model.load()
     model.test(test_data)
 
