@@ -56,11 +56,11 @@ class DiacritizationModel:
         """
         self.input_layer = Input(shape=(self.TIME_STEPS, len(CHAR2INDEX)))
         self.inner_layers = [
-            Bidirectional(LSTM(64, return_sequences=True, unroll=True)),
-            Bidirectional(LSTM(64, return_sequences=True, unroll=True)),
-            Conv1D(128, 3, activation='tanh', padding='valid'),
-            Flatten(),
-            (Dense(8, activation='tanh'), Dense(64, activation='tanh'))
+            Bidirectional(LSTM(64, return_sequences=True, unroll=True), name='L1'),
+            Bidirectional(LSTM(64, return_sequences=True, unroll=True), name='L2'),
+            Conv1D(128, 3, activation='tanh', padding='valid', name='C'),
+            Flatten(name='F'),
+            (Dense(8, activation='tanh', name='D1'), Dense(64, activation='tanh', name='D2'))
         ]
         previous_layer = self.input_layer
         for layer in self.inner_layers[:-1]:
@@ -68,8 +68,8 @@ class DiacritizationModel:
         shadda_side, haraka_side = self.inner_layers[-1]
         shadda_side = shadda_side(previous_layer)
         haraka_side = haraka_side(previous_layer)
-        self.output_shadda_layer = Dense(1, activation='sigmoid')(shadda_side)
-        self.output_haraka_layer = Dense(8, activation='softmax')(haraka_side)
+        self.output_shadda_layer = Dense(1, activation='sigmoid', name='D3')(shadda_side)
+        self.output_haraka_layer = Dense(8, activation='softmax', name='D4')(haraka_side)
         self.shadda_corrections_layer = Lambda(self.shadda_post_corrections, name='output_shadda')(
             [self.input_layer, self.output_shadda_layer, self.output_haraka_layer]
         )
@@ -94,9 +94,11 @@ class DiacritizationModel:
         self.undiacritized_vocabulary = {}
 
     def get_weights_file_path(self):
-        layer_shapes = [str(l.output_shape[-1]) if isinstance(l, Layer)
-                        else ','.join([str(sl.output_shape[-1]) for sl in l]) for l in self.inner_layers]
-        return os.path.join(self.save_dir, type(self).__name__ + '_' + '-'.join(layer_shapes) + '.h5')
+        layer_names_shapes = [l.name + '#' + str(l.output_shape[-1])
+                              if isinstance(l, Layer)
+                              else ','.join([sl.name + '#' + str(sl.output_shape[-1]) for sl in l])
+                              for l in self.inner_layers]
+        return os.path.join(self.save_dir, type(self).__name__ + '_' + '_'.join(layer_names_shapes) + '.h5')
 
     def get_history_file_path(self):
         return self.get_weights_file_path()[:-3]+'_history.pkl'
@@ -343,30 +345,32 @@ class DiacritizationModel:
         correct_words = []
         for prev_word, word, next_word in zip(d_words[:-2], d_words[1:-1], d_words[2:]):
             word_u = clear_diacritics(word)
-            if word not in self.vocabulary and word_u in self.undiacritized_vocabulary.keys():
-                prev_word_u = clear_diacritics(prev_word)
-                next_word_u = clear_diacritics(next_word)
+            prev_word_u = clear_diacritics(prev_word)
+            next_word_u = clear_diacritics(next_word)
+            try:
+                best_word = ''
+                max_frequency = 0
+                for diacritized_word, frequency in self.trigram_context[prev_word_u, word_u, next_word_u].items():
+                    if frequency > max_frequency:
+                        max_frequency = frequency
+                        best_word = diacritized_word
+                word = best_word
+            except KeyError:  # undiacritized trigram context was not found for this word
                 try:
                     best_word = ''
                     max_frequency = 0
-                    for diacritized_word, frequency in self.trigram_context[prev_word_u, word_u, next_word_u].items():
+                    for diacritized_word, frequency in self.bigram_context[prev_word_u, word_u].items():
                         if frequency > max_frequency:
                             max_frequency = frequency
                             best_word = diacritized_word
                     word = best_word
-                except KeyError:
+                except KeyError:  # undiacritized bigram context was not found for this word
                     try:
-                        best_word = ''
-                        max_frequency = 0
-                        for diacritized_word, frequency in self.bigram_context[prev_word_u, word_u].items():
-                            if frequency > max_frequency:
-                                max_frequency = frequency
-                                best_word = diacritized_word
-                        word = best_word
-                    except KeyError:
                         possible_words = list(self.undiacritized_vocabulary[word_u])
                         distances = [self.levenshtein_distance(word, w_d) for w_d in possible_words]
                         word = possible_words[np.argmin(distances)]
+                    except:  # undiacritized word was not found in the dictionary
+                        pass
             correct_words.append(word)
         return ' '.join(correct_words)
 
