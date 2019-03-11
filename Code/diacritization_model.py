@@ -127,6 +127,7 @@ class DiacritizationModel:
             previous_row = current_row
 
         return previous_row[-1]
+
     @staticmethod
     def diacritic_to_index(diacritic):
         return ['', NAME2DIACRITIC['Fatha'], NAME2DIACRITIC['Damma'],  NAME2DIACRITIC['Kasra'], NAME2DIACRITIC['Sukun'],
