@@ -168,12 +168,13 @@ def tokenize(sentence):
     return list(filter(lambda x: x != '' and x.isprintable(), re.split(WORD_TOKENIZATION_REGEXP, sentence)))
 
 
-def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8):
+def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8, min_word_diac_ratio=0.5):
     """
     Accept or void a sentence, and clean the tokens.
     :param sentence: the sentence to be filtered.
     :param min_words: minimum number of arabic words that must be left in the cleaned sentence in order to be accepted.
     :param min_word_diac_rate: rate of the diacritized words to the number of arabic words in the sentence.
+    :param min_word_diac_ratio: ratio of the diacritized letters to the number of letters in the word.
     :return: list of str, the cleaned tokens or an empty list.
     """
     assert isinstance(sentence, list) and all(isinstance(w, str) for w in sentence)
@@ -184,15 +185,16 @@ def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8):
         diac_word_count = 0
         arabic_word_count = 0
         for token in sentence:
-            word_chars = set(token)
-            if word_chars.issubset(ARABIC_SYMBOLS):
-                arabic_word_count += 1
-                if word_chars & ARABIC_DIACRITICS != set():
-                    diac_word_count += 1
             token = SPACE_PUNCTUATION_REGEXP.sub('', token)
+            word_chars = set(token)
+            if word_chars & ARABIC_LETTERS != set():
+                arabic_word_count += 1
+                word_diacs = extract_diacritics_2(token)
+                if len([x for x in word_diacs if x]) / len(word_diacs) >= min_word_diac_ratio:
+                    diac_word_count += 1
             if token != '' and (set(token).issubset(ARABIC_SYMBOLS) or NUMBER_REGEXP.match(token)):
                 new_sentence.append(token)
-        if arabic_word_count >= min_words:
+        if arabic_word_count > 0 and arabic_word_count >= min_words:
             if diac_word_count / arabic_word_count >= min_word_diac_rate:
                 return new_sentence
     return []
@@ -209,7 +211,7 @@ def read_text_file(file_path):
     with open(file_path, 'rt', encoding='utf-8') as dataset_file:
         for line in dataset_file:
             line = clean_text(line.strip(SPACES+'\n'))
-            if line == '' or not line.isprintable():
+            if line == '':
                 continue
             fragments = list(filter(lambda x: x != '',
                                     [x.strip(SPACES) for x in re.split(SENTENCE_TOKENIZATION_REGEXP, line)

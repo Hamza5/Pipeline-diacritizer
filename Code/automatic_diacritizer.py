@@ -3,7 +3,7 @@ from random import shuffle
 from diacritization_model import DiacritizationModel
 
 
-def process(source, destination, min_words, min_diac_rate, max_chars_count):
+def process(source, destination, min_words, ratio_diac_words, max_chars_count, ratio_diac_letters):
     with destination.open('w', encoding='UTF-8') as dest_file:
         if source.is_dir():
             for file_path in filter(lambda x: x.is_file(), source.iterdir()):
@@ -12,7 +12,7 @@ def process(source, destination, min_words, min_diac_rate, max_chars_count):
                 filtered_sentences = set()
                 for sf in filter(lambda x: len(x) > 0,
                                  [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)),
-                                                            min_words, min_diac_rate)
+                                                            min_words, ratio_diac_words, ratio_diac_letters)
                                   for s in sentences]):
                     filtered_sentences.add(' '.join(sf))
                 for sf in filtered_sentences:
@@ -23,7 +23,7 @@ def process(source, destination, min_words, min_diac_rate, max_chars_count):
             filtered_sentences = set()
             for sf in filter(lambda x: len(x) > 0,
                              [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)),
-                                                        min_words, min_diac_rate)
+                                                        min_words, ratio_diac_words, ratio_diac_letters)
                               for s in sentences]):
                 filtered_sentences.add(' '.join(sf))
             for sf in filtered_sentences:
@@ -123,9 +123,12 @@ if __name__ == '__main__':
     preprocessing_p.add_argument('--min-words', '-w', type=int, default=2,
                                  help='Minimum number of arabic words that must be left in the cleaned sentence in '
                                       'order to be accepted.')
-    preprocessing_p.add_argument('--min-diac-rate', '-d', type=float, default=1,
+    preprocessing_p.add_argument('--min-diac-words-ratio', '-d', type=float, default=1,
                                  help='Minimum rate of the diacritized words to the number of arabic words in the '
                                       'sentence.')
+    preprocessing_p.add_argument('--min-diac-letters-ratio', '-l', type=float, default=0.5,
+                                 help='Minimum ratio of the diacritized letters to the number of the letters in the '
+                                      'word.')
     preprocessing_p.add_argument('--max-chars-count', '-c', type=int, default=2000,
                                  help='Maximum number of characters to keep in a long sentence.')
     partition_p = subparsers.add_parser('partition', help='Divide a dataset to train, validation and test fragments.')
@@ -153,7 +156,8 @@ if __name__ == '__main__':
         root_p.print_help(sys.stderr)
         root_p.exit(-1)
     if 'source' in vars(args):
-        process(args.source, args.destination, args.min_words, args.min_diac_rate, args.max_chars_count)
+        process(args.source, args.destination, args.min_words, args.min_diac_words_ratio, args.max_chars_count,
+                args.min_diac_letters_ratio)
     elif 'dataset_file' in vars(args):
         partition(args.dataset_file, args.train_ratio, args.val_test_ratio, args.shuffle_every)
     elif 'train_data' in vars(args):
