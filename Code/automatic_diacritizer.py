@@ -60,6 +60,7 @@ def partition(dataset_file, train_ratio, val_test_ratio, shuffle_every):
                 with test_path.open('a', encoding='UTF-8') as test_file:
                     for s in sentences[train_size + val_size:]:
                         test_file.write(s)
+                print('{} sentences written'.format(len(sentences)))
                 sentences.clear()
         train_size = round(train_ratio * len(sentences))
         val_size = round(val_test_ratio * (len(sentences) - train_size))
@@ -73,6 +74,7 @@ def partition(dataset_file, train_ratio, val_test_ratio, shuffle_every):
         with test_path.open('a', encoding='UTF-8') as test_file:
             for s in sentences[train_size + val_size:]:
                 test_file.write(s)
+        print('{} sentences written'.format(len(sentences)))
     print('Finished')
 
 
