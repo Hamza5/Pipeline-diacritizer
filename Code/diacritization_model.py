@@ -313,13 +313,10 @@ class DiacritizationModel:
                 correct_w += np.all(orig_diacs == pred_diacs)
                 correct_wm += np.all(orig_diacs[:-1] == pred_diacs[:-1])
                 total_w += 1
-                cons_shaddat_pos = (orig_diacs[:, 1] == NAME2DIACRITIC['Shadda']) +\
-                                   (pred_diacs[:, 1] == NAME2DIACRITIC['Shadda'])
-                correct_shaddat = np.sum(orig_diacs[cons_shaddat_pos, 1] == pred_diacs[cons_shaddat_pos, 1])
-                correct_d += np.sum(orig_diacs[:, 0] == pred_diacs[:, 0]) + correct_shaddat
-                correct_dm += np.sum(orig_diacs[:-1, 0] == pred_diacs[:-1, 0]) + correct_shaddat
-                total_d += orig_diacs.shape[0] + np.sum(cons_shaddat_pos)
-                total_dm += orig_diacs.shape[0]-1 + np.sum(cons_shaddat_pos)
+                correct_d += np.sum(np.all(orig_diacs == pred_diacs, axis=1))
+                correct_dm += np.sum(np.all(orig_diacs[:-1] == pred_diacs[:-1], axis=1))
+                total_d += orig_diacs.shape[0]
+                total_dm += orig_diacs.shape[0]-1
         return 1 - correct_d/total_d, 1 - correct_w/total_w, 1 - correct_dm/total_dm, 1 - correct_wm/total_w
 
     def save(self):
@@ -394,21 +391,25 @@ class DiacritizedTextDataset(Sequence):
 
 
 if __name__ == '__main__':
-    print('Loading train sentences...')
-    train_sents = []
-    with open('D:/MSA_dataset_train.txt', 'rt', encoding='utf-8') as dataset_file:
-        for line in dataset_file:
-            train_sents.append(line.rstrip('\n'))
-    print('Loading validation sentences...')
-    val_sents = []
-    with open('D:/MSA_dataset_val.txt', 'rt', encoding='utf-8') as dataset_file:
-        for line in dataset_file:
-            val_sents.append(line.rstrip('\n'))
+    # print('Loading train sentences...')
+    # train_sents = []
+    # with open('dataset_train.txt', 'rt', encoding='utf-8') as dataset_file:
+    #     for line in dataset_file:
+    #         train_sents.append(line.rstrip('\n'))
+    # print('Loading validation sentences...')
+    # val_sents = []
+    # with open('dataset_val.txt', 'rt', encoding='utf-8') as dataset_file:
+    #     for line in dataset_file:
+    #         val_sents.append(line.rstrip('\n'))
     print('Loading test sentences...')
     test_sents = []
-    with open('D:/MSA_dataset_test.txt', 'rt', encoding='utf-8') as dataset_file:
+    i = 0
+    with open('dataset_test.txt', 'rt', encoding='utf-8') as dataset_file:
         for line in dataset_file:
             test_sents.append(line.rstrip('\n'))
+            i += 1
+            if i == 10000:
+                break
     print('Making model and training...')
     model = DiacritizationModel()
     model.load()
@@ -416,7 +417,7 @@ if __name__ == '__main__':
     # os.system('sudo poweroff')
     # model.test(test_sents)
     from random import sample
-    for s in sample(test_sents, 10):
+    for s in sample(test_sents, 20):
         undiacritized = clear_diacritics(s)
         print('_'*len(undiacritized))
         print(model.diacritize(undiacritized))
