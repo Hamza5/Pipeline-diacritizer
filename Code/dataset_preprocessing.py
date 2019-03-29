@@ -11,7 +11,7 @@ D_NAMES = ['Fathatan', 'Dammatan', 'Kasratan', 'Fatha', 'Damma', 'Kasra', 'Shadd
 NAME2DIACRITIC = dict((name, chr(code)) for name, code in zip(D_NAMES, range(0x064B, 0x0653)))
 DIACRITIC2NAME = dict((code, name) for name, code in NAME2DIACRITIC.items())
 ARABIC_DIACRITICS = frozenset(NAME2DIACRITIC.values())
-ARABIC_LETTERS = frozenset([chr(x) for x in (list(range(0x0621, 0x63B)) + list(range(0x0641, 0x064B)))] + ['ـ'])
+ARABIC_LETTERS = frozenset([chr(x) for x in (list(range(0x0621, 0x63B)) + list(range(0x0641, 0x064B)))])
 ARABIC_SYMBOLS = ARABIC_LETTERS | ARABIC_DIACRITICS
 EXTRA_SUKUN_REGEXP = re.compile(r'(?<=ال)' + NAME2DIACRITIC['Sukun'])
 # YA_REGEXP = re.compile(r'ى(?=['+''.join(ARABIC_DIACRITICS)+r'])')
@@ -28,7 +28,7 @@ NUMBER_REGEXP = re.compile(r'\d+(?:\.\d+)?')
 DOTS_NO_URL = r'(?<!\w)(['+SENTENCE_SEPARATORS+']+)(?!\w)'
 WORD_TOKENIZATION_REGEXP = re.compile('([' + ''.join(ARABIC_SYMBOLS) + ']+|\d+(?:\.\d+)?)')
 SENTENCE_TOKENIZATION_REGEXP = re.compile(DOTS_NO_URL + '|' + XML_TAG)
-CHAR2INDEX = dict((l, n) for n, l in enumerate(sorted(ARABIC_LETTERS - {'ـ'})))
+CHAR2INDEX = dict((l, n) for n, l in enumerate(sorted(ARABIC_LETTERS)))
 CHAR2INDEX.update(dict((v, k) for k, v in enumerate([' ', '0'], len(CHAR2INDEX))))
 INDEX2CHAR = dict((v, k) for k, v in CHAR2INDEX.items())
 
@@ -238,7 +238,7 @@ def text_to_indices(text):
     assert isinstance(text, str) and set(text) & ARABIC_DIACRITICS == set()
     char_vectors = np.empty((len(text),))
     for i in range(len(text)):
-        if text[i] in ARABIC_LETTERS - {'ـ'}:
+        if text[i] in ARABIC_LETTERS:
             char_vectors[i] = CHAR2INDEX[text[i]]
         elif text[i].isnumeric():
             char_vectors[i] = CHAR2INDEX['0']

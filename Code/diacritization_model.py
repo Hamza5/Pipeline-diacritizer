@@ -14,7 +14,8 @@ from tensorflow.keras.metrics import binary_accuracy, categorical_accuracy
 from tensorflow.keras.optimizers import Adadelta
 from tensorflow.keras.utils import Sequence, to_categorical
 
-from dataset_preprocessing import NAME2DIACRITIC, CHAR2INDEX, extract_diacritics_2, clear_diacritics, add_time_steps
+from dataset_preprocessing import NAME2DIACRITIC, CHAR2INDEX, extract_diacritics_2, clear_diacritics, add_time_steps, \
+    NUMBER_REGEXP, WORD_TOKENIZATION_REGEXP
 
 
 def precision(y_true, y_pred):
@@ -302,7 +303,7 @@ class DiacritizationModel:
     def der_wer_values(self, test_sentences):
         correct_d, correct_w, total_d, total_w, correct_dm, correct_wm, total_dm = 0, 0, 0, 0, 0, 0, 0
         for original_sentce in test_sentences:
-            predicted_sentence = self.diacritize(clear_diacritics(original_sentce))
+            predicted_sentence = self.diacritize_processed(clear_diacritics(original_sentce))
             for orig_word, pred_word in zip(original_sentce.split(), predicted_sentence.split()):
                 if orig_word == '0':
                     continue
@@ -332,14 +333,14 @@ class DiacritizationModel:
                 self.vocabulary, self.undiacritized_vocabulary, self.trigram_context, self.bigram_context =\
                     pickle.load(vocab_file)
 
-    def diacritize(self, text):
-        assert isinstance(text, str)
-        text_indices = [CHAR2INDEX[x] for x in text]
+    def diacritize_processed(self, u_p_text):
+        assert isinstance(u_p_text, str)
+        text_indices = [CHAR2INDEX[x] for x in u_p_text]
         input = add_time_steps(to_categorical(text_indices, len(CHAR2INDEX)), DiacritizationModel.TIME_STEPS, False)
         shadda_pred, harakat_pred = self.model.predict_on_batch(input)
         shaddat = [NAME2DIACRITIC['Shadda'] if x >= 0.5 else '' for x in shadda_pred]
         harakat = [self.index_to_diacritic(np.argmax(x)) for x in harakat_pred]
-        d_words = ('<s> '+''.join([l+sh+h for l, sh, h in zip(text, shaddat, harakat)])+' <e>').split(' ')
+        d_words = ('<s> ' + ''.join([l + sh + h for l, sh, h in zip(u_p_text, shaddat, harakat)]) + ' <e>').split(' ')
         correct_words = []
         for prev_word, word, next_word in zip(d_words[:-2], d_words[1:-1], d_words[2:]):
             word_u = clear_diacritics(word)
@@ -371,6 +372,19 @@ class DiacritizationModel:
                         pass
             correct_words.append(word)
         return ' '.join(correct_words)
+
+    def diacritize_original(self, u_text):
+        assert isinstance(u_text, str)
+        numbers_words = NUMBER_REGEXP.findall(u_text)
+        u_text = NUMBER_REGEXP.sub('0', clear_diacritics(u_text))
+        segments = WORD_TOKENIZATION_REGEXP.split(u_text)
+        valid_segments = [x for x in segments if WORD_TOKENIZATION_REGEXP.match(x)]
+        diacritized_valid_words = self.diacritize_processed(' '.join(valid_segments)).split(' ')
+        for d_word in diacritized_valid_words:
+            u_text = u_text.replace(clear_diacritics(d_word), d_word, 1)
+        for nw in numbers_words:
+            u_text = u_text.replace('0', nw, 1)
+        return u_text
 
 
 class DiacritizedTextDataset(Sequence):
@@ -420,7 +434,7 @@ if __name__ == '__main__':
     for s in sample(test_sents, 20):
         undiacritized = clear_diacritics(s)
         print('_'*len(undiacritized))
-        print(model.diacritize(undiacritized))
+        print(model.diacritize_processed(undiacritized))
         print(s)
     print(model.der_wer_values(test_sents))
     # import matplotlib.pyplot as plt
