@@ -104,11 +104,22 @@ def test(test_data_path, weights_dir):
     model.test(test_data)
 
 
+def diacritize(text, weights_dir, output_file):
+    model = DiacritizationModel(str(weights_dir))
+    model.load()
+    if Path(text).is_file():
+        with open(text, 'rt', encoding='UTF-8') as input_text_file:
+            for sentence in input_text_file:
+                print(model.diacritize_original(sentence), file=output_file, end='')
+    else:
+        print(model.diacritize_original(text), file=output_file)
+
+
 if __name__ == '__main__':
 
     import sys
     from pathlib import Path
-    from argparse import ArgumentParser
+    from argparse import ArgumentParser, FileType
 
     from dataset_preprocessing import read_text_file, filter_tokenized_sentence, tokenize, fix_diacritics_errors
 
@@ -153,6 +164,13 @@ if __name__ == '__main__':
     test_parser.add_argument('test_data', type=Path, help='Test dataset.')
     test_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
                              help='Directory containing the weights file for the model.')
+    diacritize_parser = subparsers.add_parser('diacritize', description='Restore the diacritics of the Arabic letters'
+                                                                        'in a text.')
+    diacritize_parser.add_argument('text', help='Sentence to diacritize.')
+    diacritize_parser.add_argument('--output-file', '-o', type=FileType('wt', encoding='UTF-8'), default=sys.stdout,
+                                   help='The output file for the results.')
+    diacritize_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
+                                   help='Directory containing the weights file for the model.')
     args = root_p.parse_args()
     if not vars(args):
         root_p.print_help(sys.stderr)
@@ -166,3 +184,5 @@ if __name__ == '__main__':
         train(args.train_data, args.val_data, args.iterations, args.weights_dir, args.early_stop)
     elif 'test_data' in vars(args):
         test(args.test_data, args.weights_dir)
+    elif 'text' in vars(args):
+        diacritize(args.text, args.weights_dir, args.output_file)
