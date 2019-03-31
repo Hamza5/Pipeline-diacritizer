@@ -102,7 +102,7 @@ def merge_diacritics(undiacritized_text, diacritics):
     :return: str, the diacritized text.
     """
     assert isinstance(undiacritized_text, str)
-    assert isinstance(diacritics, list) and set(diacritics).issubset(ARABIC_DIACRITICS.union(['']))
+    assert set(diacritics).issubset(ARABIC_DIACRITICS.union(['']))
     i = 0
     j = 0
     sequence = []

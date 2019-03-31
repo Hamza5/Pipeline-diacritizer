@@ -91,7 +91,6 @@ class DiacritizationModel:
                 self.values_history = pickle.load(history_file)
         self.trigram_context = {}
         self.bigram_context = {}
-        self.vocabulary = set()
         self.undiacritized_vocabulary = {}
 
     def get_weights_file_path(self):
@@ -247,10 +246,10 @@ class DiacritizationModel:
             pickle.dump(self.values_history, history_file)
 
     def train(self, train_sentences, val_sentences, epochs, early_stop_iter):
+        print('Generating n-grams...')
         for sentence in train_sentences:
             words = ('<s> '+sentence+' <e>').split(' ')
             undiac_words = [clear_diacritics(w) for w in words]
-            self.vocabulary.update(words)
             for w0_u, w1_d, w1_u, w2_u in zip(undiac_words[:-2], words[1:-1], undiac_words[1:-1], undiac_words[2:]):
                 try:
                     self.undiacritized_vocabulary[w1_u].add(w1_d)
@@ -271,10 +270,11 @@ class DiacritizationModel:
                 except KeyError:
                     self.bigram_context[w0_u, w1_u] = {w1_d: 1}
         with open(self.get_vocabulary_file_path(), 'wb') as vocab_file:
-            pickle.dump((self.vocabulary, self.undiacritized_vocabulary, self.trigram_context, self.bigram_context),
-                        vocab_file)
+            pickle.dump((self.undiacritized_vocabulary, self.trigram_context, self.bigram_context), vocab_file)
+        print('Processing the dataset...')
         train_ins, train_outs = DiacritizationModel.generate_dataset(train_sentences)
         val_ins, val_outs = DiacritizationModel.generate_dataset(val_sentences)
+        print('Calculating parameters...')
         total = 0
         shadda_count = 0
         harakat_counts = np.zeros((8,))
@@ -330,8 +330,7 @@ class DiacritizationModel:
         vocab_path = self.get_vocabulary_file_path()
         if os.path.isfile(vocab_path):
             with open(vocab_path, 'rb') as vocab_file:
-                self.vocabulary, self.undiacritized_vocabulary, self.trigram_context, self.bigram_context =\
-                    pickle.load(vocab_file)
+                self.undiacritized_vocabulary, self.trigram_context, self.bigram_context = pickle.load(vocab_file)
 
     def diacritize_processed(self, u_p_text):
         assert isinstance(u_p_text, str)
