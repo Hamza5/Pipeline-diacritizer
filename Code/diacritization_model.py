@@ -15,7 +15,7 @@ from tensorflow.keras.optimizers import Adadelta
 from tensorflow.keras.utils import Sequence, to_categorical
 
 from dataset_preprocessing import NAME2DIACRITIC, CHAR2INDEX, extract_diacritics_2, clear_diacritics, add_time_steps, \
-    NUMBER_REGEXP, WORD_TOKENIZATION_REGEXP
+    NUMBER_REGEXP, WORD_TOKENIZATION_REGEXP, ZERO_REGEXP
 
 
 def precision(y_true, y_pred):
@@ -239,6 +239,12 @@ class DiacritizationModel:
         pred_haraka = mask * pred_haraka + (1 - mask) * K.one_hot(0, K.int_shape(pred_haraka)[-1])
         return pred_haraka
 
+    @staticmethod
+    def remove_unwanted_chars(sentences):
+        assert isinstance(sentences, Iterable)
+        return [' '.join([x for x in WORD_TOKENIZATION_REGEXP.split(NUMBER_REGEXP.sub('0', s))
+                          if WORD_TOKENIZATION_REGEXP.match(x)]) for s in sentences]
+
     def save_history(self, epoch, logs):
         for name in self.values_history.keys():
             self.values_history[name].append(logs[name])
@@ -246,9 +252,12 @@ class DiacritizationModel:
             pickle.dump(self.values_history, history_file)
 
     def train(self, train_sentences, val_sentences, epochs, early_stop_iter):
+        print('Removing unwanted characters...')
+        train_sentences = self.remove_unwanted_chars(train_sentences)
+        val_sentences = self.remove_unwanted_chars(val_sentences)
         print('Generating n-grams...')
         for sentence in train_sentences:
-            words = ('<s> '+sentence+' <e>').split(' ')
+            words = ['<s>'] + sentence.split() + ['<e>']
             undiac_words = [clear_diacritics(w) for w in words]
             for w0_u, w1_d, w1_u, w2_u in zip(undiac_words[:-2], words[1:-1], undiac_words[1:-1], undiac_words[2:]):
                 try:
@@ -294,23 +303,22 @@ class DiacritizationModel:
                                             EarlyStopping(patience=early_stop_iter, verbose=1)], workers=os.cpu_count())
 
     def test(self, test_sentences):
-        test_ins, test_outs = DiacritizationModel.generate_dataset(test_sentences)
-        values = self.model.evaluate_generator(DiacritizedTextDataset(test_ins, test_outs))
-        for name, value in zip(self.model.metrics_names, values):
-            print('{}: {}'.format(name, value))
+        # test_ins, test_outs = DiacritizationModel.generate_dataset(self.remove_unwanted_chars(test_sentences))
+        # values = self.model.evaluate_generator(DiacritizedTextDataset(test_ins, test_outs))
+        # for name, value in zip(self.model.metrics_names, values):
+        #     print('{}: {}'.format(name, value))
         print('DER={:.2%} | WER={:.2%} | DERm={:.2%} | WERm={:.2%}'.format(*self.der_wer_values(test_sentences)))
 
     def der_wer_values(self, test_sentences):
         correct_d, correct_w, total_d, total_w, correct_dm, correct_wm, total_dm = 0, 0, 0, 0, 0, 0, 0
-        for original_sentce in test_sentences:
-            predicted_sentence = self.diacritize_processed(clear_diacritics(original_sentce))
-            for orig_word, pred_word in zip(original_sentce.split(), predicted_sentence.split()):
-                if orig_word == '0':
+        for original_sentence in test_sentences:
+            predicted_sentence = self.diacritize_original(clear_diacritics(original_sentence))
+            for orig_word, pred_word in zip(WORD_TOKENIZATION_REGEXP.split(original_sentence),
+                                            WORD_TOKENIZATION_REGEXP.split(predicted_sentence)):
+                if len(orig_word) == 0:
                     continue
                 orig_diacs = np.array([x[::-1] if len(x) == 2 else (x, '') for x in extract_diacritics_2(orig_word)])
                 pred_diacs = np.array([x[::-1] if len(x) == 2 else (x, '') for x in extract_diacritics_2(pred_word)])
-                if orig_diacs.shape[0] == 0:
-                    continue
                 correct_w += np.all(orig_diacs == pred_diacs)
                 correct_wm += np.all(orig_diacs[:-1] == pred_diacs[:-1])
                 total_w += 1
@@ -379,10 +387,12 @@ class DiacritizationModel:
         segments = WORD_TOKENIZATION_REGEXP.split(u_text)
         valid_segments = [x for x in segments if WORD_TOKENIZATION_REGEXP.match(x)]
         diacritized_valid_words = self.diacritize_processed(' '.join(valid_segments)).split(' ')
+        start_index = 0
         for d_word in diacritized_valid_words:
-            u_text = u_text.replace(clear_diacritics(d_word), d_word, 1)
+            u_text = u_text[:start_index] + u_text[start_index:].replace(clear_diacritics(d_word), d_word, 1)
+            start_index = u_text.index(d_word) + len(d_word)
         for nw in numbers_words:
-            u_text = u_text.replace('0', nw, 1)
+            u_text = ZERO_REGEXP.sub(nw, u_text, 1)
         return u_text
 
 
@@ -401,56 +411,3 @@ class DiacritizedTextDataset(Sequence):
         target_harakat = to_categorical(self.diacritics_indices[index][1], 8)
         target_shadda = np.array(self.diacritics_indices[index][0], dtype=np.float).reshape((-1, 1))
         return input, [target_shadda, target_harakat]
-
-
-if __name__ == '__main__':
-    # print('Loading train sentences...')
-    # train_sents = []
-    # with open('dataset_train.txt', 'rt', encoding='utf-8') as dataset_file:
-    #     for line in dataset_file:
-    #         train_sents.append(line.rstrip('\n'))
-    # print('Loading validation sentences...')
-    # val_sents = []
-    # with open('dataset_val.txt', 'rt', encoding='utf-8') as dataset_file:
-    #     for line in dataset_file:
-    #         val_sents.append(line.rstrip('\n'))
-    print('Loading test sentences...')
-    test_sents = []
-    i = 0
-    with open('dataset_test.txt', 'rt', encoding='utf-8') as dataset_file:
-        for line in dataset_file:
-            test_sents.append(line.rstrip('\n'))
-            i += 1
-            if i == 10000:
-                break
-    print('Making model and training...')
-    model = DiacritizationModel()
-    model.load()
-    # model.train(train_sents, val_sents, 5)
-    # os.system('sudo poweroff')
-    # model.test(test_sents)
-    from random import sample
-    for s in sample(test_sents, 20):
-        undiacritized = clear_diacritics(s)
-        print('_'*len(undiacritized))
-        print(model.diacritize_processed(undiacritized))
-        print(s)
-    print(model.der_wer_values(test_sents))
-    # import matplotlib.pyplot as plt
-    # plt.figure(figsize=(13, 4))
-    # loss_axes = plt.subplot(1, 3, 1)
-    # loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['loss'], label='Train')
-    # loss_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_loss'], label='Validation')
-    # loss_axes.set_title('Loss')
-    # loss_axes.legend()
-    # shadda_axes = plt.subplot(1, 3, 2)
-    # shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_shadda_binary_accuracy'], label='Train')
-    # shadda_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_shadda_binary_accuracy'], label='Validation')
-    # shadda_axes.set_title('Shadda accuracy')
-    # shadda_axes.legend()
-    # harakat_axes = plt.subplot(1, 3, 3)
-    # harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['output_haraka_categorical_accuracy'], label='Train')
-    # harakat_axes.plot(np.arange(len(model.values_history['loss']))+1, model.values_history['val_output_haraka_categorical_accuracy'], label='Validation')
-    # harakat_axes.set_title('Harakat accuracy')
-    # harakat_axes.legend()
-    # plt.show()

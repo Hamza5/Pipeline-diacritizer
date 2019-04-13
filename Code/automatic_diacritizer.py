@@ -11,8 +11,8 @@ def process(source, destination, min_words, ratio_diac_words, max_chars_count, r
                 sentences = read_text_file(str(file_path))
                 filtered_sentences = set()
                 for sf in filter(lambda x: len(x) > 0,
-                                 [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)),
-                                                            min_words, ratio_diac_words, ratio_diac_letters)
+                                 [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)), min_words,
+                                                            ratio_diac_words, ratio_diac_letters)
                                   for s in sentences]):
                     filtered_sentences.add(' '.join(sf))
                 for sf in filtered_sentences:
@@ -22,9 +22,8 @@ def process(source, destination, min_words, ratio_diac_words, max_chars_count, r
             sentences = read_text_file(str(source))
             filtered_sentences = set()
             for sf in filter(lambda x: len(x) > 0,
-                             [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)),
-                                                        min_words, ratio_diac_words, ratio_diac_letters)
-                              for s in sentences]):
+                             [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)), min_words, ratio_diac_words,
+                                                        ratio_diac_letters) for s in sentences]):
                 filtered_sentences.add(' '.join(sf))
             for sf in filtered_sentences:
                 print(sf[:max_chars_count].rstrip(), file=dest_file)

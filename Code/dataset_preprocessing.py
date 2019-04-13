@@ -17,14 +17,15 @@ EXTRA_SUKUN_REGEXP = re.compile(r'(?<=ال)' + NAME2DIACRITIC['Sukun'])
 # YA_REGEXP = re.compile(r'ى(?=['+''.join(ARABIC_DIACRITICS)+r'])')
 DIACRITIC_SHADDA_REGEXP = re.compile('(['+''.join(ARABIC_DIACRITICS)+'])('+NAME2DIACRITIC['Shadda']+')')
 XML_TAG = r'(?:<.+>)+'
-SENTENCE_SEPARATORS = '،؛.:؟!'
+SENTENCE_SEPARATORS = ';,،؛.:؟!'
 SPACES = ' \t'
 PUNCTUATION = SENTENCE_SEPARATORS + '۩﴿﴾«»ـ' +\
               ''.join([chr(x) for x in range(0x0021, 0x0030)]+[chr(x) for x in range(0x003A, 0x0040)] +
                       [chr(x) for x in range(0x005B, 0x0060)]+[chr(x) for x in range(0x007B, 0x007F)])
-SPACE_PUNCTUATION_REGEXP = re.compile('[' + SPACES + PUNCTUATION + ']+')
+# SPACE_PUNCTUATION_REGEXP = re.compile('[' + SPACES + PUNCTUATION + ']+')
 DATETIME_REGEXP = re.compile(r'(?:\d+[-/:\s]+)+\d+')
 NUMBER_REGEXP = re.compile(r'\d+(?:\.\d+)?')
+ZERO_REGEXP = re.compile(r'\b0\b')
 DOTS_NO_URL = r'(?<!\w)(['+SENTENCE_SEPARATORS+']+)(?!\w)'
 WORD_TOKENIZATION_REGEXP = re.compile('([' + ''.join(ARABIC_SYMBOLS) + ']+|\d+(?:\.\d+)?)')
 SENTENCE_TOKENIZATION_REGEXP = re.compile(DOTS_NO_URL + '|' + XML_TAG)
@@ -154,8 +155,8 @@ def clean_text(text):
     :return: str, the cleaned text.
     """
     assert isinstance(text, str)
-    # Clean HTML garbage, tatweel, dates, and replace numbers.
-    return NUMBER_REGEXP.sub('0', DATETIME_REGEXP.sub('', text.replace('ـ', '').replace('&quot;', '')))
+    # Clean HTML garbage, tatweel, dates.
+    return DATETIME_REGEXP.sub('', text.replace('ـ', '').replace('&quot;', ''))
 
 
 def tokenize(sentence):
@@ -185,15 +186,16 @@ def filter_tokenized_sentence(sentence, min_words=2, min_word_diac_rate=0.8, min
         diac_word_count = 0
         arabic_word_count = 0
         for token in sentence:
-            token = SPACE_PUNCTUATION_REGEXP.sub('', token)
+            token = token.strip()
+            if not token:
+                continue
             word_chars = set(token)
             if word_chars & ARABIC_LETTERS != set():
                 arabic_word_count += 1
                 word_diacs = extract_diacritics_2(token)
                 if len([x for x in word_diacs if x]) / len(word_diacs) >= min_word_diac_ratio:
                     diac_word_count += 1
-            if token != '' and (set(token).issubset(ARABIC_SYMBOLS) or NUMBER_REGEXP.match(token)):
-                new_sentence.append(token)
+            new_sentence.append(token)
         if arabic_word_count > 0 and arabic_word_count >= min_words:
             if diac_word_count / arabic_word_count >= min_word_diac_rate:
                 return new_sentence
