@@ -91,7 +91,7 @@ def train(train_data_path, val_data_path, iterations, weights_dir, early_stop):
     model.train(train_data, val_data, iterations, early_stop)
 
 
-def test(test_data_path, weights_dir):
+def test(test_data_path, weights_dir, strict):
     test_data = []
     print('Loading test dataset...')
     with test_data_path.open('r', encoding='UTF-8') as test_data_file:
@@ -100,7 +100,7 @@ def test(test_data_path, weights_dir):
     model = DiacritizationModel(str(weights_dir))
     model.load()
     print('Testing...')
-    model.test(test_data)
+    model.test(test_data, strict)
 
 
 def diacritize(text, weights_dir, output_file):
@@ -163,6 +163,8 @@ if __name__ == '__main__':
     test_parser.add_argument('test_data', type=Path, help='Test dataset.')
     test_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
                              help='Directory containing the weights file for the model.')
+    test_parser.add_argument('--strict', '-s', action='store_true',
+                             help='Use strict mode: count only Arabic words in the metrics.')
     diacritize_parser = subparsers.add_parser('diacritize', description='Restore the diacritics of the Arabic letters'
                                                                         'in a text.')
     diacritize_parser.add_argument('text', help='Sentence to diacritize.')
@@ -182,6 +184,6 @@ if __name__ == '__main__':
     elif 'train_data' in vars(args):
         train(args.train_data, args.val_data, args.iterations, args.weights_dir, args.early_stop)
     elif 'test_data' in vars(args):
-        test(args.test_data, args.weights_dir)
+        test(args.test_data, args.weights_dir, args.strict)
     elif 'text' in vars(args):
         diacritize(args.text, args.weights_dir, args.output_file)

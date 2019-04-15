@@ -302,21 +302,26 @@ class DiacritizationModel:
                                             LambdaCallback(on_epoch_end=self.save_history),
                                             EarlyStopping(patience=early_stop_iter, verbose=1)], workers=os.cpu_count())
 
-    def test(self, test_sentences):
+    def test(self, test_sentences, strict_mode):
         # test_ins, test_outs = DiacritizationModel.generate_dataset(self.remove_unwanted_chars(test_sentences))
         # values = self.model.evaluate_generator(DiacritizedTextDataset(test_ins, test_outs))
         # for name, value in zip(self.model.metrics_names, values):
         #     print('{}: {}'.format(name, value))
-        print('DER={:.2%} | WER={:.2%} | DERm={:.2%} | WERm={:.2%}'.format(*self.der_wer_values(test_sentences)))
+        print('DER={:.2%} | WER={:.2%} | DERm={:.2%} | WERm={:.2%}'.format(*self.der_wer_values(test_sentences,
+                                                                                                strict_mode)))
 
-    def der_wer_values(self, test_sentences):
+    def der_wer_values(self, test_sentences, strict=False):
         correct_d, correct_w, total_d, total_w, correct_dm, correct_wm, total_dm = 0, 0, 0, 0, 0, 0, 0
         for original_sentence in test_sentences:
             predicted_sentence = self.diacritize_original(clear_diacritics(original_sentence))
             for orig_word, pred_word in zip(WORD_TOKENIZATION_REGEXP.split(original_sentence),
                                             WORD_TOKENIZATION_REGEXP.split(predicted_sentence)):
+                orig_word, pred_word = orig_word.strip(), pred_word.strip()
                 if len(orig_word) == 0:
                     continue
+                if strict:
+                    if not WORD_TOKENIZATION_REGEXP.match(orig_word) or NUMBER_REGEXP.match(orig_word):
+                        continue
                 orig_diacs = np.array([x[::-1] if len(x) == 2 else (x, '') for x in extract_diacritics_2(orig_word)])
                 pred_diacs = np.array([x[::-1] if len(x) == 2 else (x, '') for x in extract_diacritics_2(pred_word)])
                 correct_w += np.all(orig_diacs == pred_diacs)
