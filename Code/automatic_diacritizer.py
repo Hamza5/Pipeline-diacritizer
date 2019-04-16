@@ -1,5 +1,7 @@
 from random import shuffle
 
+from dataset_preprocessing import WORD_TOKENIZATION_REGEXP, NUMBER_REGEXP, extract_diacritics, clear_diacritics, \
+    ARABIC_DIACRITICS
 from diacritization_model import DiacritizationModel
 
 
@@ -114,6 +116,51 @@ def diacritize(text, weights_dir, output_file):
         print(model.diacritize_original(text), file=output_file)
 
 
+def stat(file_path):
+    assert isinstance(file_path, Path)
+    chars_count = 0
+    arabic_letters_count = 0
+    digits_count = 0
+    tokens_count = 0
+    numbers_count = 0
+    arabic_words_count = 0
+    diacritics_count = 0
+    diacritization_forms = {}
+    with file_path.open('r', encoding='UTF-8') as data_file:
+        for line in data_file:
+            line = line.rstrip('\n')
+            segments = [x.strip() for x in WORD_TOKENIZATION_REGEXP.split(line) if x.strip() != '']
+            for seg in segments:
+                tokens_count += 1
+                chars_count += len(seg)
+                if WORD_TOKENIZATION_REGEXP.match(seg):
+                    if NUMBER_REGEXP.match(seg):
+                        numbers_count += 1
+                        digits_count += sum(1 for x in seg if x in '0123456789')
+                    else:
+                        arabic_words_count += 1
+                        undiacritized = clear_diacritics(seg)
+                        arabic_letters_count += len(undiacritized)
+                        if undiacritized != seg:
+                            try:
+                                diacritization_forms[undiacritized].add(seg)
+                            except KeyError:
+                                diacritization_forms[undiacritized] = {seg}
+                            diacritics_count += len([x for x in extract_diacritics(seg) if x in ARABIC_DIACRITICS])
+    print('Statistics about the dataset:', file_path)
+    print('-'*35)
+    print('|Characters         |{:13d}|'.format(chars_count))
+    print('|Tokens             |{:13d}|'.format(tokens_count))
+    print('|Numbers            |{:13d}|'.format(numbers_count))
+    print('|Digits             |{:13d}|'.format(digits_count))
+    print('|Arabic words       |{:13d}|'.format(arabic_words_count))
+    print('|Arabic letters     |{:13d}|'.format(arabic_letters_count))
+    print('|Diacritics         |{:13d}|'.format(diacritics_count))
+    print('|Undiacritized forms|{:13d}|'.format(len(diacritization_forms)))
+    print('|Diacritized forms  |{:13d}|'.format(sum(len(x) for x in diacritization_forms.values())))
+    print('-'*35)
+
+
 if __name__ == '__main__':
 
     import sys
@@ -172,6 +219,8 @@ if __name__ == '__main__':
                                    help='The output file for the results.')
     diacritize_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
                                    help='Directory containing the weights file for the model.')
+    stat_parser = subparsers.add_parser('stat', description='Calculate some statistics about a dataset.')
+    stat_parser.add_argument('dataset_text_file', type=Path, help='The file path of the dataset.')
     args = root_p.parse_args()
     if not vars(args):
         root_p.print_help(sys.stderr)
@@ -187,3 +236,5 @@ if __name__ == '__main__':
         test(args.test_data, args.weights_dir, args.strict)
     elif 'text' in vars(args):
         diacritize(args.text, args.weights_dir, args.output_file)
+    elif 'dataset_text_file' in vars(args):
+        stat(args.dataset_text_file)
