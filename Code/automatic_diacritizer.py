@@ -1,7 +1,7 @@
 from random import shuffle
 
 from dataset_preprocessing import WORD_TOKENIZATION_REGEXP, NUMBER_REGEXP, extract_diacritics, clear_diacritics, \
-    ARABIC_DIACRITICS
+    ARABIC_DIACRITICS, ARABIC_LETTERS
 from diacritization_model import DiacritizationModel
 
 
@@ -105,15 +105,15 @@ def test(test_data_path, weights_dir, strict):
     model.test(test_data, strict)
 
 
-def diacritize(text, weights_dir, output_file):
+def diacritize(text_path, weights_dir, output_file):
     model = DiacritizationModel(str(weights_dir))
     model.load()
-    if Path(text).is_file():
-        with open(text, 'rt', encoding='UTF-8') as input_text_file:
-            for sentence in input_text_file:
-                print(model.diacritize_original(sentence), file=output_file, end='')
-    else:
-        print(model.diacritize_original(text), file=output_file)
+    sentences = read_text_file(str(text_path))
+    for sentence in sentences:
+        if set(sentence) & ARABIC_LETTERS != set():
+            print(model.diacritize_original(sentence), file=output_file)
+        else:
+            print(sentence, file=output_file)
 
 
 def stat(file_path):
@@ -214,7 +214,7 @@ if __name__ == '__main__':
                              help='Use strict mode: count only Arabic words in the metrics.')
     diacritize_parser = subparsers.add_parser('diacritize', description='Restore the diacritics of the Arabic letters'
                                                                         'in a text.')
-    diacritize_parser.add_argument('text', help='Sentence to diacritize.')
+    diacritize_parser.add_argument('text_file', type=Path, help='A text file with an undiacritized Arabic text.')
     diacritize_parser.add_argument('--output-file', '-o', type=FileType('wt', encoding='UTF-8'), default=sys.stdout,
                                    help='The output file for the results.')
     diacritize_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
@@ -234,7 +234,7 @@ if __name__ == '__main__':
         train(args.train_data, args.val_data, args.iterations, args.weights_dir, args.early_stop)
     elif 'test_data' in vars(args):
         test(args.test_data, args.weights_dir, args.strict)
-    elif 'text' in vars(args):
-        diacritize(args.text, args.weights_dir, args.output_file)
+    elif 'text_file' in vars(args):
+        diacritize(args.text_file, args.weights_dir, args.output_file)
     elif 'dataset_text_file' in vars(args):
         stat(args.dataset_text_file)
