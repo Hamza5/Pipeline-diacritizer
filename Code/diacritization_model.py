@@ -177,8 +177,7 @@ class DiacritizationModel:
         previous_char_index = K.argmax(inputs[:, -2], axis=-1)
         allowed_instances *= K.cast(K.not_equal(previous_char_index, CHAR2INDEX[' ']), 'float32')
         # Drop the shadda from the letter having a Sukun
-        allowed_instances *= K.cast(K.not_equal(K.argmax(pred_haraka, axis=1), 4), 'float32') * K.max(pred_haraka,
-                                                                                                      axis=1)
+        allowed_instances *= K.cast(K.not_equal(K.argmax(pred_haraka, axis=1), 4), 'float32')
         return K.reshape(allowed_instances, (-1, 1)) * pred_shadda
 
     @staticmethod

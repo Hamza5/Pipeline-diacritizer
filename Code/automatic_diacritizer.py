@@ -1,7 +1,9 @@
+#!/usr/bin/python3
+
 from random import shuffle
 
 from dataset_preprocessing import WORD_TOKENIZATION_REGEXP, NUMBER_REGEXP, extract_diacritics, clear_diacritics, \
-    ARABIC_DIACRITICS, ARABIC_LETTERS
+    ARABIC_DIACRITICS, ARABIC_LETTERS, SENTENCE_TOKENIZATION_REGEXP, SPACES
 from diacritization_model import DiacritizationModel
 
 
@@ -106,14 +108,24 @@ def test(test_data_path, weights_dir, strict):
 
 
 def diacritize(text_path, weights_dir, output_file):
+    assert isinstance(text_path, Path)
+    assert isinstance(weights_dir, Path)
     model = DiacritizationModel(str(weights_dir))
     model.load()
-    sentences = read_text_file(str(text_path))
-    for sentence in sentences:
-        if set(sentence) & ARABIC_LETTERS != set():
-            print(model.diacritize_original(sentence), file=output_file)
-        else:
-            print(sentence, file=output_file)
+    with text_path.open('rt', encoding='UTF-8') as text_file:
+        for line in text_file:
+            sentences = list(filter(lambda x: x != '',
+                                    [x.strip(SPACES) for x in SENTENCE_TOKENIZATION_REGEXP.split(line)
+                                     if x is not None]))
+            d_sentences = []
+            for sentence in sentences:
+                if set(sentence) & ARABIC_LETTERS != set():
+                    d_sentences.append(model.diacritize_original(sentence))
+                else:
+                    d_sentences.append(sentence)
+            for s, d_s in zip(sentences, d_sentences):
+                line = line.replace(s, d_s)
+            print(line, file=output_file, end='')
 
 
 def stat(file_path):
