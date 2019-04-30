@@ -395,7 +395,7 @@ class DiacritizationModel:
         start_index = 0
         for d_word in diacritized_valid_words:
             u_text = u_text[:start_index] + u_text[start_index:].replace(clear_diacritics(d_word), d_word, 1)
-            start_index = u_text.index(d_word) + len(d_word)
+            start_index = max(u_text.index(d_word) + len(d_word), start_index + len(d_word))
         for nw in numbers_words:
             u_text = ZERO_REGEXP.sub(nw, u_text, 1)
         return u_text
