@@ -8,7 +8,7 @@ from collections import Iterable
 import numpy as np
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
-from tensorflow.keras.callbacks import ModelCheckpoint, LambdaCallback, EarlyStopping
+from tensorflow.keras.callbacks import ModelCheckpoint, LambdaCallback, EarlyStopping, TerminateOnNaN
 from tensorflow.keras.layers import LSTM, Dense, Conv1D, Flatten, Bidirectional, Input, Layer, Lambda
 from tensorflow.keras.metrics import binary_accuracy, categorical_accuracy
 from tensorflow.keras.optimizers import Adadelta
@@ -299,7 +299,8 @@ class DiacritizationModel:
                                  callbacks=[ModelCheckpoint(self.get_weights_file_path(),
                                                             save_weights_only=True, save_best_only=True),
                                             LambdaCallback(on_epoch_end=self.save_history),
-                                            EarlyStopping(patience=early_stop_iter, verbose=1)], workers=os.cpu_count())
+                                            EarlyStopping(patience=early_stop_iter, verbose=1),
+                                            TerminateOnNaN()], workers=os.cpu_count())
 
     def test(self, test_sentences, strict_mode):
         # test_ins, test_outs = DiacritizationModel.generate_dataset(self.remove_unwanted_chars(test_sentences))
