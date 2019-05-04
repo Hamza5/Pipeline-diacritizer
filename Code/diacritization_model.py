@@ -3,7 +3,9 @@ Module containing the new diacritization model.
 """
 import os.path
 import pickle
+import sys
 from collections import Iterable
+from datetime import datetime
 
 import numpy as np
 import tensorflow.keras.backend as K
@@ -312,18 +314,25 @@ class DiacritizationModel:
 
     def der_wer_values(self, test_sentences, strict=False):
         correct_d, correct_w, total_d, total_w, correct_dm, correct_wm, total_dm = 0, 0, 0, 0, 0, 0, 0
-        for original_sentence in test_sentences:
+        logging_indexes = set(int(x / 100 * len(test_sentences)) for x in range(1, 101))
+        print('Calculating DER and WER values in {}strict mode'.format('non-' if not strict else ''))
+        for i, original_sentence in enumerate(test_sentences, 1):
             predicted_sentence = self.diacritize_original(clear_diacritics(original_sentence))
             for orig_word, pred_word in zip(WORD_TOKENIZATION_REGEXP.split(original_sentence),
                                             WORD_TOKENIZATION_REGEXP.split(predicted_sentence)):
                 orig_word, pred_word = orig_word.strip(), pred_word.strip()
-                if len(orig_word) == 0:
+                if len(orig_word) == 0 or len(pred_word) == 0:  # Rare problematic scenario
                     continue
                 if strict:
                     if not WORD_TOKENIZATION_REGEXP.match(orig_word) or NUMBER_REGEXP.match(orig_word):
                         continue
                 orig_diacs = np.array([x[::-1] if len(x) == 2 else (x, '') for x in extract_diacritics_2(orig_word)])
                 pred_diacs = np.array([x[::-1] if len(x) == 2 else (x, '') for x in extract_diacritics_2(pred_word)])
+                if orig_diacs.shape != pred_diacs.shape:  # Rare problematic scenario
+                    print('Diacritization mismatch between original and predicted forms: {} {}'.format(orig_word,
+                                                                                                       pred_word),
+                          file=sys.stderr)
+                    continue
                 correct_w += np.all(orig_diacs == pred_diacs)
                 correct_wm += np.all(orig_diacs[:-1] == pred_diacs[:-1])
                 total_w += 1
@@ -331,6 +340,9 @@ class DiacritizationModel:
                 correct_dm += np.sum(np.all(orig_diacs[:-1] == pred_diacs[:-1], axis=1))
                 total_d += orig_diacs.shape[0]
                 total_dm += orig_diacs.shape[0]-1
+            if i in logging_indexes:
+                print('{}: {}/{} processed ({:.0%}).'.format(datetime.now(), i, len(test_sentences),
+                                                             i/len(test_sentences)))
         return 1 - correct_d/total_d, 1 - correct_w/total_w, 1 - correct_dm/total_dm, 1 - correct_wm/total_w
 
     def save(self):
