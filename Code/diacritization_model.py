@@ -312,10 +312,12 @@ class DiacritizationModel:
         print('DER={:.2%} | WER={:.2%} | DERm={:.2%} | WERm={:.2%}'.format(*self.der_wer_values(test_sentences,
                                                                                                 strict_mode)))
 
-    def der_wer_values(self, test_sentences, strict=False):
+    def der_wer_values(self, test_sentences, strict_level=1):
         correct_d, correct_w, total_d, total_w, correct_dm, correct_wm, total_dm = 0, 0, 0, 0, 0, 0, 0
         logging_indexes = set(int(x / 100 * len(test_sentences)) for x in range(1, 101))
-        print('Calculating DER and WER values in {}strict mode'.format('non-' if not strict else ''))
+        print('Calculating DER and WER values in {} mode'.format(
+            'strict' if strict_level == 2 else 'tolerant'if strict_level == 1 else 'ignoring')
+        )
         for i, original_sentence in enumerate(test_sentences, 1):
             predicted_sentence = self.diacritize_original(clear_diacritics(original_sentence))
             for orig_word, pred_word in zip(WORD_TOKENIZATION_REGEXP.split(original_sentence),
@@ -323,7 +325,7 @@ class DiacritizationModel:
                 orig_word, pred_word = orig_word.strip(), pred_word.strip()
                 if len(orig_word) == 0 or len(pred_word) == 0:  # Rare problematic scenario
                     continue
-                if strict:
+                if strict_level == 2:
                     if not WORD_TOKENIZATION_REGEXP.match(orig_word) or NUMBER_REGEXP.match(orig_word):
                         continue
                 orig_diacs = np.array([x[::-1] if len(x) == 2 else (x, '') for x in extract_diacritics_2(orig_word)])
@@ -333,13 +335,17 @@ class DiacritizationModel:
                                                                                                        pred_word),
                           file=sys.stderr)
                     continue
+                if strict_level == 0:
+                    diacritics_indexes = orig_diacs[:, 0] != ''
+                    pred_diacs = pred_diacs[diacritics_indexes]
+                    orig_diacs = orig_diacs[diacritics_indexes]
                 correct_w += np.all(orig_diacs == pred_diacs)
                 correct_wm += np.all(orig_diacs[:-1] == pred_diacs[:-1])
                 total_w += 1
                 correct_d += np.sum(np.all(orig_diacs == pred_diacs, axis=1))
                 correct_dm += np.sum(np.all(orig_diacs[:-1] == pred_diacs[:-1], axis=1))
                 total_d += orig_diacs.shape[0]
-                total_dm += orig_diacs.shape[0]-1
+                total_dm += orig_diacs[:-1].shape[0]
             if i in logging_indexes:
                 print('{}: {}/{} processed ({:.0%}).'.format(datetime.now(), i, len(test_sentences),
                                                              i/len(test_sentences)))
