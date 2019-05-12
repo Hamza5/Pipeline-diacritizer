@@ -335,7 +335,8 @@ class DiacritizationModel:
                                                                                                        pred_word),
                           file=sys.stderr)
                     continue
-                if strict_level == 0:
+                if strict_level == 0 and WORD_TOKENIZATION_REGEXP.match(orig_word) and\
+                        not NUMBER_REGEXP.match(orig_word):
                     diacritics_indexes = orig_diacs[:, 0] != ''
                     pred_diacs = pred_diacs[diacritics_indexes]
                     orig_diacs = orig_diacs[diacritics_indexes]
