@@ -3,6 +3,7 @@ Module containing the new diacritization model.
 """
 import os.path
 import pickle
+import re
 import sys
 from collections import Iterable
 from datetime import datetime
@@ -17,7 +18,7 @@ from tensorflow.keras.optimizers import Adadelta
 from tensorflow.keras.utils import Sequence, to_categorical
 
 from dataset_preprocessing import NAME2DIACRITIC, CHAR2INDEX, extract_diacritics_2, clear_diacritics, add_time_steps, \
-    NUMBER_REGEXP, WORD_TOKENIZATION_REGEXP, ZERO_REGEXP
+    NUMBER_REGEXP, WORD_TOKENIZATION_REGEXP, ZERO_REGEXP, ARABIC_LETTERS
 
 
 def precision(y_true, y_pred):
@@ -94,6 +95,7 @@ class DiacritizationModel:
         self.trigram_context = {}
         self.bigram_context = {}
         self.undiacritized_vocabulary = {}
+        self.patterns = {}
 
     def get_weights_file_path(self):
         layer_names_shapes = [l.name + '#' + str(l.output_shape[-1])
@@ -105,8 +107,17 @@ class DiacritizationModel:
     def get_history_file_path(self):
         return self.get_weights_file_path()[:-3]+'_history.pkl'
 
-    def get_vocabulary_file_path(self):
-        return os.path.join(self.save_dir, type(self).__name__ + '_vocab_context.pkl')
+    def get_trigrams_file_path(self):
+        return os.path.join(self.save_dir, type(self).__name__ + '_trigrams.pkl')
+
+    def get_bigrams_file_path(self):
+        return os.path.join(self.save_dir, type(self).__name__ + '_bigrams.pkl')
+
+    def get_unigrams_file_path(self):
+        return os.path.join(self.save_dir, type(self).__name__ + '_unigrams.pkl')
+
+    def get_patterns_file_path(self):
+        return os.path.join(self.save_dir, type(self).__name__ + '_patterns.pkl')
 
     @staticmethod
     def levenshtein_distance(s1, s2):
@@ -246,6 +257,16 @@ class DiacritizationModel:
         return [' '.join([x for x in WORD_TOKENIZATION_REGEXP.split(NUMBER_REGEXP.sub('0', s))
                           if WORD_TOKENIZATION_REGEXP.match(x)]) for s in sentences]
 
+    CONSONANTS_REGEXP = re.compile('['+''.join(ARABIC_LETTERS - {'ؤ', 'ء', 'ئ', 'أ', 'آ', 'ا', 'ى', 'و', 'ي', 'ة'})+']')
+
+    @staticmethod
+    def convert_to_pattern(word):
+        assert isinstance(word, str)
+        for c in {'ؤ', 'ئ', 'أ', 'آ'}:
+            word = word.replace(c, 'ء')
+        word = word.replace('ى', 'ا')
+        return __class__.CONSONANTS_REGEXP.sub('ح', word)
+
     def save_history(self, epoch, logs):
         for name in self.values_history.keys():
             self.values_history[name].append(logs[name])
@@ -279,8 +300,18 @@ class DiacritizationModel:
                         self.bigram_context[w0_u, w1_u][w1_d] = 1
                 except KeyError:
                     self.bigram_context[w0_u, w1_u] = {w1_d: 1}
-        with open(self.get_vocabulary_file_path(), 'wb') as vocab_file:
-            pickle.dump((self.undiacritized_vocabulary, self.trigram_context, self.bigram_context), vocab_file)
+                try:
+                    self.patterns[self.convert_to_pattern(w1_u)].add(self.convert_to_pattern(w1_d))
+                except KeyError:
+                    self.patterns[self.convert_to_pattern(w1_u)] = {self.convert_to_pattern(w1_d)}
+        with open(self.get_trigrams_file_path(), 'wb') as vocab_file:
+            pickle.dump(self.trigram_context, vocab_file)
+        with open(self.get_bigrams_file_path(), 'wb') as vocab_file:
+            pickle.dump(self.bigram_context, vocab_file)
+        with open(self.get_unigrams_file_path(), 'wb') as vocab_file:
+            pickle.dump(self.undiacritized_vocabulary, vocab_file)
+        with open(self.get_patterns_file_path(), 'wb') as vocab_file:
+            pickle.dump(self.patterns, vocab_file)
         print('Processing the dataset...')
         train_ins, train_outs = DiacritizationModel.generate_dataset(train_sentences)
         val_ins, val_outs = DiacritizationModel.generate_dataset(val_sentences)
@@ -354,15 +385,35 @@ class DiacritizationModel:
 
     def save(self):
         self.model.save_weights(self.get_weights_file_path())
+        with open(self.get_trigrams_file_path(), 'wb') as trigrams_file:
+            pickle.dump(self.trigram_context, trigrams_file)
+        with open(self.get_bigrams_file_path(), 'wb') as bigrams_file:
+            pickle.dump(self.bigram_context, bigrams_file)
+        with open(self.get_unigrams_file_path(), 'wb') as unigrams_file:
+            pickle.dump(self.undiacritized_vocabulary, unigrams_file)
+        with open(self.get_patterns_file_path(), 'wb') as patterns_file:
+            pickle.dump(self.patterns, patterns_file)
 
     def load(self):
         file_path = self.get_weights_file_path()
         if os.path.isfile(file_path):
             self.model.load_weights(file_path)
-        vocab_path = self.get_vocabulary_file_path()
+        vocab_path = self.get_trigrams_file_path()
         if os.path.isfile(vocab_path):
             with open(vocab_path, 'rb') as vocab_file:
-                self.undiacritized_vocabulary, self.trigram_context, self.bigram_context = pickle.load(vocab_file)
+                self.trigram_context = pickle.load(vocab_file)
+        vocab_path = self.get_bigrams_file_path()
+        if os.path.isfile(vocab_path):
+            with open(vocab_path, 'rb') as vocab_file:
+                self.bigram_context = pickle.load(vocab_file)
+        vocab_path = self.get_unigrams_file_path()
+        if os.path.isfile(vocab_path):
+            with open(vocab_path, 'rb') as vocab_file:
+                self.undiacritized_vocabulary = pickle.load(vocab_file)
+        vocab_path = self.get_patterns_file_path()
+        if os.path.isfile(vocab_path):
+            with open(vocab_path, 'rb') as vocab_file:
+                self.patterns = pickle.load(vocab_file)
 
     def diacritize_processed(self, u_p_text):
         assert isinstance(u_p_text, str)
@@ -399,8 +450,19 @@ class DiacritizationModel:
                         possible_words = list(self.undiacritized_vocabulary[word_u])
                         distances = [self.levenshtein_distance(word, w_d) for w_d in possible_words]
                         word = possible_words[np.argmin(distances)]
-                    except:  # undiacritized word was not found in the dictionary
-                        pass
+                    except KeyError:  # undiacritized word was not found in the dictionary
+                        try:
+                            u_pattern = self.convert_to_pattern(word_u)
+                            d_pattern = self.convert_to_pattern(word)
+                            possible_patterns = list(self.patterns[u_pattern])
+                            distances = [self.levenshtein_distance(d_pattern, p_d) for p_d in possible_patterns]
+                            best_pattern = possible_patterns[np.argmin(distances)]
+                            diacritics = extract_diacritics_2(best_pattern)
+                            word = ''
+                            for l, d in zip(word_u, diacritics):
+                                word += l + (d if len(d) < 2 else d[0] + d[1])
+                        except KeyError:
+                            pass
             correct_words.append(word)
         return ' '.join(correct_words)
 
