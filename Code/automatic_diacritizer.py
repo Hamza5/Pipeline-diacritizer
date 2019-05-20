@@ -95,22 +95,26 @@ def train(train_data_path, val_data_path, iterations, weights_dir, early_stop):
     model.train(train_data, val_data, iterations, early_stop)
 
 
-def test(test_data_path, weights_dir, strict_mode):
+def test(test_data_path, weights_dir, strict_mode, enable_rules, enable_trigrams, enable_bigrams, enable_unigrams,
+         enable_patterns):
     test_data = []
     print('Loading test dataset...')
     with test_data_path.open('r', encoding='UTF-8') as test_data_file:
         for line in test_data_file:
             test_data.append(line.rstrip('\n'))
-    model = DiacritizationModel(str(weights_dir))
+    model = DiacritizationModel(str(weights_dir), enable_rules, enable_trigrams, enable_bigrams, enable_unigrams,
+                                enable_patterns)
     model.load()
     print('Testing...')
     model.test(test_data, strict_mode)
 
 
-def diacritize(text_path, weights_dir, output_file):
+def diacritize(text_path, weights_dir, output_file, enable_rules, enable_trigrams, enable_bigrams, enable_unigrams,
+               enable_patterns):
     assert isinstance(text_path, Path)
     assert isinstance(weights_dir, Path)
-    model = DiacritizationModel(str(weights_dir))
+    model = DiacritizationModel(str(weights_dir), enable_rules, enable_trigrams, enable_bigrams, enable_unigrams,
+                                enable_patterns)
     model.load()
     with text_path.open('rt', encoding='UTF-8') as text_file:
         for line in text_file:
@@ -227,6 +231,14 @@ if __name__ == '__main__':
                                   '2: count only Arabic words.\n'
                                   '1: count all words.\n'
                                   '0: count all words excluding the letters without diacritics.')
+    test_parser.add_argument('--disable-rules', dest='rules', action='store_false', help='Do not use the rules.')
+    test_parser.add_argument('--disable-trigrams', dest='trigrams', action='store_false',
+                             help='Do not load the trigrams.')
+    test_parser.add_argument('--disable-bigrams', dest='bigrams', action='store_false', help='Do not load the bigrams.')
+    test_parser.add_argument('--disable-unigrams', dest='unigrams', action='store_false',
+                             help='Do not load the unigrams.')
+    test_parser.add_argument('--disable-patterns', dest='patterns', action='store_false',
+                             help='Do not load the patterns.')
     diacritize_parser = subparsers.add_parser('diacritize', description='Restore the diacritics of the Arabic letters'
                                                                         'in a text.')
     diacritize_parser.add_argument('text_file', type=Path, help='A text file with an undiacritized Arabic text.')
@@ -234,6 +246,15 @@ if __name__ == '__main__':
                                    help='The output file for the results.')
     diacritize_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
                                    help='Directory containing the weights file for the model.')
+    diacritize_parser.add_argument('--disable-rules', dest='rules', action='store_false', help='Do not use the rules.')
+    diacritize_parser.add_argument('--disable-trigrams', dest='trigrams', action='store_false',
+                                   help='Do not load the trigrams.')
+    diacritize_parser.add_argument('--disable-bigrams', dest='bigrams', action='store_false',
+                                   help='Do not load the bigrams.')
+    diacritize_parser.add_argument('--disable-unigrams', dest='unigrams', action='store_false',
+                                   help='Do not load the unigrams.')
+    diacritize_parser.add_argument('--disable-patterns', dest='patterns', action='store_false',
+                                   help='Do not load the patterns.')
     stat_parser = subparsers.add_parser('stat', description='Calculate some statistics about a dataset.')
     stat_parser.add_argument('dataset_text_file', type=Path, help='The file path of the dataset.')
     args = root_p.parse_args()
@@ -248,8 +269,10 @@ if __name__ == '__main__':
     elif 'train_data' in vars(args):
         train(args.train_data, args.val_data, args.iterations, args.weights_dir, args.early_stop)
     elif 'test_data' in vars(args):
-        test(args.test_data, args.weights_dir, args.mode)
+        test(args.test_data, args.weights_dir, args.mode, args.rules, args.trigrams, args.bigrams, args.unigrams,
+             args.patterns)
     elif 'text_file' in vars(args):
-        diacritize(args.text_file, args.weights_dir, args.output_file)
+        diacritize(args.text_file, args.weights_dir, args.output_file, args.rules, args.trigrams, args.bigrams,
+                   args.unigrams, args.patterns)
     elif 'dataset_text_file' in vars(args):
         stat(args.dataset_text_file)

@@ -53,11 +53,18 @@ class DiacritizationModel:
     TIME_STEPS = 10
     OPTIMIZER = Adadelta()
 
-    def __init__(self, save_dir='.'):
+    def __init__(self, save_dir='.', use_rules=True, use_trigrams=True, use_bigrams=True, use_unigrams=True,
+                 use_patterns=True):
         """
         Construct a automatic diacritization system model.
         :param save_dir: the path of the directory containing the weights and the history files.
         """
+        self.save_dir = save_dir
+        self.rules_enabled = use_rules
+        self.trigrams_enabled = use_trigrams
+        self.bigrams_enabled = use_bigrams
+        self.unigrams_enabled = use_unigrams
+        self.patterns_enabled = use_patterns
         self.input_layer = Input(shape=(self.TIME_STEPS, len(CHAR2INDEX)))
         self.inner_layers = [
             Bidirectional(LSTM(64, return_sequences=True, unroll=True), name='L1'),
@@ -80,15 +87,14 @@ class DiacritizationModel:
         self.haraka_corrections_layer = Lambda(self.haraka_post_corrections, name='output_haraka')(
             [self.input_layer, self.output_haraka_layer, self.output_shadda_layer]
         )
-        self.model = Model(inputs=self.input_layer, outputs=[self.shadda_corrections_layer,
-                                                             self.haraka_corrections_layer])
+        self.model = Model(inputs=self.input_layer,
+                           outputs=[self.shadda_corrections_layer, self.haraka_corrections_layer])
         self.model.compile(self.OPTIMIZER,
                            {'output_haraka': 'categorical_crossentropy', 'output_shadda': 'binary_crossentropy'},
                            {'output_haraka': [categorical_accuracy, precision, recall],
                             'output_shadda': [binary_accuracy, precision, recall]})
         self.values_history = dict((k, []) for k in self.model.metrics_names + ['val_'+x for x in
                                                                                 self.model.metrics_names])
-        self.save_dir = save_dir
         if os.path.isfile(self.get_history_file_path()):
             with open(self.get_history_file_path(), 'rb') as history_file:
                 self.values_history = pickle.load(history_file)
@@ -170,14 +176,15 @@ class DiacritizationModel:
             inputs.append(text_indices)
         return inputs, targets
 
-    @staticmethod
-    def shadda_post_corrections(in_out):
+    def shadda_post_corrections(self, in_out):
         """
         Drop any obviously misplaced shadda marks according to the character and its context.
         :param in_out: input layer and prediction layers outputs.
         :return: corrected predictions.
         """
         inputs, pred_shadda, pred_haraka = in_out
+        if not self.rules_enabled:
+            return pred_shadda
         # Drop the shadda from the forbidden letters
         forbidden_chars = [CHAR2INDEX[' '], CHAR2INDEX['ا'], CHAR2INDEX['ء'], CHAR2INDEX['أ'], CHAR2INDEX['إ'],
                            CHAR2INDEX['آ'], CHAR2INDEX['ى'], CHAR2INDEX['ئ'], CHAR2INDEX['ة'], CHAR2INDEX['0']]
@@ -193,14 +200,15 @@ class DiacritizationModel:
         allowed_instances *= K.cast(K.not_equal(K.argmax(pred_haraka, axis=1), 4), 'float32')
         return K.reshape(allowed_instances, (-1, 1)) * pred_shadda
 
-    @staticmethod
-    def haraka_post_corrections(in_out):
+    def haraka_post_corrections(self, in_out):
         """
         Change any obviously wrong haraka marks according to the character and its context.
         :param in_out: input layer and prediction layers outputs.
         :return: corrected predictions.
         """
         inputs, pred_haraka, pred_shadda = in_out
+        if not self.rules_enabled:
+            return pred_haraka
         char_index = K.argmax(inputs[:, -1], axis=-1)
         # Force the correct haraka on some letters
         forced_diac_chars = {CHAR2INDEX['إ']: 3}
@@ -399,19 +407,19 @@ class DiacritizationModel:
         if os.path.isfile(file_path):
             self.model.load_weights(file_path)
         vocab_path = self.get_trigrams_file_path()
-        if os.path.isfile(vocab_path):
+        if os.path.isfile(vocab_path) and self.trigrams_enabled:
             with open(vocab_path, 'rb') as vocab_file:
                 self.trigram_context = pickle.load(vocab_file)
         vocab_path = self.get_bigrams_file_path()
-        if os.path.isfile(vocab_path):
+        if os.path.isfile(vocab_path) and self.bigrams_enabled:
             with open(vocab_path, 'rb') as vocab_file:
                 self.bigram_context = pickle.load(vocab_file)
         vocab_path = self.get_unigrams_file_path()
-        if os.path.isfile(vocab_path):
+        if os.path.isfile(vocab_path) and self.unigrams_enabled:
             with open(vocab_path, 'rb') as vocab_file:
                 self.undiacritized_vocabulary = pickle.load(vocab_file)
         vocab_path = self.get_patterns_file_path()
-        if os.path.isfile(vocab_path):
+        if os.path.isfile(vocab_path) and self.patterns_enabled:
             with open(vocab_path, 'rb') as vocab_file:
                 self.patterns = pickle.load(vocab_file)
 
