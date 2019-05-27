@@ -95,8 +95,8 @@ def train(train_data_path, val_data_path, iterations, weights_dir, early_stop):
     model.train(train_data, val_data, iterations, early_stop)
 
 
-def test(test_data_path, weights_dir, strict_mode, enable_rules, enable_trigrams, enable_bigrams, enable_unigrams,
-         enable_patterns):
+def test(test_data_path, weights_dir, arabic_only, include_no_diacritic, enable_rules, enable_trigrams, enable_bigrams,
+         enable_unigrams, enable_patterns):
     test_data = []
     print('Loading test dataset...')
     with test_data_path.open('r', encoding='UTF-8') as test_data_file:
@@ -106,7 +106,7 @@ def test(test_data_path, weights_dir, strict_mode, enable_rules, enable_trigrams
                                 enable_patterns)
     model.load()
     print('Testing...')
-    model.test(test_data, strict_mode)
+    model.test(test_data, arabic_only, include_no_diacritic)
 
 
 def diacritize(text_path, weights_dir, output_file, enable_rules, enable_trigrams, enable_bigrams, enable_unigrams,
@@ -226,11 +226,10 @@ if __name__ == '__main__':
     test_parser.add_argument('test_data', type=Path, help='Test dataset.')
     test_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
                              help='Directory containing the weights file for the model.')
-    test_parser.add_argument('--mode', '-m', type=int, choices=range(3), default=1,
-                             help='Metrics calculation mode:\n'
-                                  '2: count only Arabic words.\n'
-                                  '1: count all words.\n'
-                                  '0: count all words excluding the letters without diacritics.')
+    test_parser.add_argument('--all-characters', '-a', action='store_false', dest='arabic_only',
+                             help='Include the non-Arabic symbols in the calculation of the metrics')
+    test_parser.add_argument('--ignore-no-diacritics', '-n', action='store_false', dest='no_diacritic',
+                             help='Include the non-Arabic symbols in the calculation of the metrics')
     test_parser.add_argument('--disable-rules', dest='rules', action='store_false', help='Do not use the rules.')
     test_parser.add_argument('--disable-trigrams', dest='trigrams', action='store_false',
                              help='Do not load the trigrams.')
@@ -269,8 +268,8 @@ if __name__ == '__main__':
     elif 'train_data' in vars(args):
         train(args.train_data, args.val_data, args.iterations, args.weights_dir, args.early_stop)
     elif 'test_data' in vars(args):
-        test(args.test_data, args.weights_dir, args.mode, args.rules, args.trigrams, args.bigrams, args.unigrams,
-             args.patterns)
+        test(args.test_data, args.weights_dir, args.arabic_only, args.no_diacritic, args.rules, args.trigrams,
+             args.bigrams, args.unigrams, args.patterns)
     elif 'text_file' in vars(args):
         diacritize(args.text_file, args.weights_dir, args.output_file, args.rules, args.trigrams, args.bigrams,
                    args.unigrams, args.patterns)

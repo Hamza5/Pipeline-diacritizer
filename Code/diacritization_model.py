@@ -343,20 +343,20 @@ class DiacritizationModel:
                                             EarlyStopping(patience=early_stop_iter, verbose=1),
                                             TerminateOnNaN()], workers=os.cpu_count())
 
-    def test(self, test_sentences, strict_mode):
+    def test(self, test_sentences, arabic_only, include_no_diacritic):
         # test_ins, test_outs = DiacritizationModel.generate_dataset(self.remove_unwanted_chars(test_sentences))
         # values = self.model.evaluate_generator(DiacritizedTextDataset(test_ins, test_outs))
         # for name, value in zip(self.model.metrics_names, values):
         #     print('{}: {}'.format(name, value))
-        print('DER={:.2%} | WER={:.2%} | DERm={:.2%} | WERm={:.2%}'.format(*self.der_wer_values(test_sentences,
-                                                                                                strict_mode)))
+        print('DER={:.2%} | WER={:.2%} | DERm={:.2%} | WERm={:.2%}'.format(
+            *self.der_wer_values(test_sentences, arabic_only, include_no_diacritic)
+        ))
 
-    def der_wer_values(self, test_sentences, strict_level=1):
+    def der_wer_values(self, test_sentences, limit_to_arabic=True, include_no_diacritic=True):
         correct_d, correct_w, total_d, total_w, correct_dm, correct_wm, total_dm = 0, 0, 0, 0, 0, 0, 0
         logging_indexes = set(int(x / 100 * len(test_sentences)) for x in range(1, 101))
-        print('Calculating DER and WER values in {} mode'.format(
-            'strict' if strict_level == 2 else 'tolerant'if strict_level == 1 else 'ignoring')
-        )
+        print('Calculating DER and WER values on {} characters'.format('Arabic' if limit_to_arabic else 'all'))
+        print('{} no-diacritic Arabic letters'.format('Including' if include_no_diacritic else 'Ignoring'))
         for i, original_sentence in enumerate(test_sentences, 1):
             predicted_sentence = self.diacritize_original(clear_diacritics(original_sentence))
             for orig_word, pred_word in zip(WORD_TOKENIZATION_REGEXP.split(original_sentence),
@@ -364,7 +364,7 @@ class DiacritizationModel:
                 orig_word, pred_word = orig_word.strip(), pred_word.strip()
                 if len(orig_word) == 0 or len(pred_word) == 0:  # Rare problematic scenario
                     continue
-                if strict_level == 2:
+                if limit_to_arabic:
                     if not WORD_TOKENIZATION_REGEXP.match(orig_word) or NUMBER_REGEXP.match(orig_word):
                         continue
                 orig_diacs = np.array([x[::-1] if len(x) == 2 else (x, '') for x in extract_diacritics_2(orig_word)])
@@ -374,7 +374,7 @@ class DiacritizationModel:
                                                                                                        pred_word),
                           file=sys.stderr)
                     continue
-                if strict_level == 0 and WORD_TOKENIZATION_REGEXP.match(orig_word) and\
+                if not include_no_diacritic and WORD_TOKENIZATION_REGEXP.match(orig_word) and\
                         not NUMBER_REGEXP.match(orig_word):
                     diacritics_indexes = orig_diacs[:, 0] != ''
                     pred_diacs = pred_diacs[diacritics_indexes]
