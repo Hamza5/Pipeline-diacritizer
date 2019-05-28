@@ -67,8 +67,8 @@ class DiacritizationModel:
         self.patterns_enabled = use_patterns
         self.input_layer = Input(shape=(self.TIME_STEPS, len(CHAR2INDEX)))
         self.inner_layers = [
-            Bidirectional(LSTM(64, return_sequences=True, unroll=True), name='L1'),
-            Bidirectional(LSTM(64, return_sequences=True, unroll=True), name='L2'),
+            Bidirectional(LSTM(64, return_sequences=True, unroll=True, dropout=0.1), name='L1'),
+            Bidirectional(LSTM(64, return_sequences=True, unroll=True, dropout=0.1), name='L2'),
             Conv1D(128, 3, activation='tanh', padding='valid', name='C'),
             Flatten(name='F'),
             (Dense(8, activation='tanh', name='D1'), Dense(64, activation='tanh', name='D2'))
