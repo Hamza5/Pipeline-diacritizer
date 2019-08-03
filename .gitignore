@@ -6,7 +6,7 @@
 *.synctex.gz
 *.blg
 *.pdf
-#IntellijIDEA
+# IntellijIDEA
 .idea/
-
-
+# Python
+__pycache__/

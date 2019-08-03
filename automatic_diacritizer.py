@@ -188,10 +188,10 @@ if __name__ == '__main__':
     root_p = ArgumentParser(description='Script to generate the datasets and train the diacritization models.')
     subparsers = root_p.add_subparsers(title='Commands', description='Available operations')
     preprocessing_p = subparsers.add_parser('process',
-                                            description='Transform Arabic raw text files to a preprocessed dataset by'
-                                                        ' splitting sentences, dropping punctuation and noise, and '
-                                                        'normalizing the spaces and the numbers, then keeping only the '
-                                                        'highly diacritized sentences.')
+                                            help='Transform Arabic raw text files to a preprocessed dataset by '
+                                                 'splitting sentences, dropping punctuation and noise, and normalizing '
+                                                 'the spaces and the numbers, then keeping only the highly diacritized '
+                                                 'sentences.')
     preprocessing_p.add_argument('source', type=Path, help='Path of a raw text file or a folder containing the text '
                                                            'files.')
     preprocessing_p.add_argument('destination', type=Path, help='Path of the generated text file after processing.')
@@ -213,7 +213,7 @@ if __name__ == '__main__':
                                                                                      'and test data.')
     partition_p.add_argument('--shuffle-every', '-s', type=int, default=1000,
                              help='Number of sentences to accumulate before shuffling.')
-    train_parser = subparsers.add_parser('train', description='Launch the training of a model.')
+    train_parser = subparsers.add_parser('train', help='Launch the training of a model.')
     train_parser.add_argument('--train-data', '-t', type=Path, required=True, help='Training dataset.')
     train_parser.add_argument('--val-data', '-v', type=Path, required=True, help='Validation dataset.')
     train_parser.add_argument('--iterations', '-i', type=int, default=15,
@@ -222,7 +222,7 @@ if __name__ == '__main__':
                               help='Directory containing the weights file for the model.')
     train_parser.add_argument('--early-stop', '-e', type=int, default=3,
                               help='Maximum number of tries to add when the model performances does not improve.')
-    test_parser = subparsers.add_parser('test', description='Test a pretrained model.')
+    test_parser = subparsers.add_parser('test', help='Test a pretrained model.')
     test_parser.add_argument('test_data', type=Path, help='Test dataset.')
     test_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
                              help='Directory containing the weights file for the model.')
@@ -238,8 +238,8 @@ if __name__ == '__main__':
                              help='Do not load the unigrams.')
     test_parser.add_argument('--disable-patterns', dest='patterns', action='store_false',
                              help='Do not load the patterns.')
-    diacritize_parser = subparsers.add_parser('diacritize', description='Restore the diacritics of the Arabic letters'
-                                                                        'in a text.')
+    diacritize_parser = subparsers.add_parser('diacritize', help='Restore the diacritics of the Arabic letters in a'
+                                                                 'text.')
     diacritize_parser.add_argument('text_file', type=Path, help='A text file with an undiacritized Arabic text.')
     diacritize_parser.add_argument('--output-file', '-o', type=FileType('wt', encoding='UTF-8'), default=sys.stdout,
                                    help='The output file for the results.')
@@ -254,7 +254,7 @@ if __name__ == '__main__':
                                    help='Do not load the unigrams.')
     diacritize_parser.add_argument('--disable-patterns', dest='patterns', action='store_false',
                                    help='Do not load the patterns.')
-    stat_parser = subparsers.add_parser('stat', description='Calculate some statistics about a dataset.')
+    stat_parser = subparsers.add_parser('stat', help='Calculate some statistics about a dataset.')
     stat_parser.add_argument('dataset_text_file', type=Path, help='The file path of the dataset.')
     args = root_p.parse_args()
     if not vars(args):
