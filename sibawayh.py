@@ -185,13 +185,12 @@ if __name__ == '__main__':
 
     from dataset_preprocessing import read_text_file, filter_tokenized_sentence, tokenize, fix_diacritics_errors
 
-    root_p = ArgumentParser(description='Script to generate the datasets and train the diacritization models.')
+    root_p = ArgumentParser(description='Program allowing to process diacritized datasets, training, testing and diacritizing.')
     subparsers = root_p.add_subparsers(title='Commands', description='Available operations')
     preprocessing_p = subparsers.add_parser('process',
                                             help='Transform Arabic raw text files to a preprocessed dataset by '
-                                                 'splitting sentences, dropping punctuation and noise, and normalizing '
-                                                 'the spaces and the numbers, then keeping only the highly diacritized '
-                                                 'sentences.')
+                                                 'splitting sentences, dropping punctuation and noise, normalizing '
+                                                 'spaces and numbers, then keeping only the highly diacritized sentences.')
     preprocessing_p.add_argument('source', type=Path, help='Path of a raw text file or a folder containing the text '
                                                            'files.')
     preprocessing_p.add_argument('destination', type=Path, help='Path of the generated text file after processing.')
