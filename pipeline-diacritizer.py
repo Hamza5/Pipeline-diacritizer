@@ -1,73 +1,57 @@
 #!/usr/bin/python3
-
-from random import shuffle
+import os
+import random
 
 from dataset_preprocessing import WORD_TOKENIZATION_REGEXP, NUMBER_REGEXP, extract_diacritics, clear_diacritics, \
     ARABIC_DIACRITICS, ARABIC_LETTERS, SENTENCE_TOKENIZATION_REGEXP, SPACES
 from diacritization_model import DiacritizationModel
 
 
-def process(source, destination, min_words, ratio_diac_words, max_chars_count, ratio_diac_letters):
+def print_progress_bar(current, maximum):
+    assert isinstance(current, int)
+    assert isinstance(maximum, int)
+    progress_text = '[{:50s}] {:d}/{:d} ({:0.2%})'.format('=' * int(current / maximum * 50), current, maximum,
+                                                          current / maximum)
+    sys.stdout.write('\r' + progress_text)
+    sys.stdout.flush()
+
+
+def preprocess(source, destination, min_words, ratio_diac_words, max_chars_count, ratio_diac_letters):
     with destination.open('w', encoding='UTF-8') as dest_file:
         if source.is_dir():
-            for file_path in filter(lambda x: x.is_file(), source.iterdir()):
-                print('Parsing', file_path, '...')
-                sentences = read_text_file(str(file_path))
-                filtered_sentences = set()
-                for sf in filter(lambda x: len(x) > 0,
-                                 [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)), min_words,
-                                                            ratio_diac_words, ratio_diac_letters)
-                                  for s in sentences]):
-                    filtered_sentences.add(' '.join(sf))
-                for sf in filtered_sentences:
-                    print(sf[:max_chars_count].rstrip(), file=dest_file)
+            sentences = []
+            for (dirpath, dirnames, filenames) in os.walk(source):
+                for file_name in filenames:
+                    file_path = os.path.join(dirpath, file_name)
+                    print('Parsing {} ...'.format(file_path))
+                    sentences.extend(read_text_file(str(file_path)))
         elif source.is_file():
-            print('Parsing', source, '...')
+            print('Parsing {} ...'.format(source))
             sentences = read_text_file(str(source))
-            filtered_sentences = set()
-            for sf in filter(lambda x: len(x) > 0,
-                             [filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)), min_words, ratio_diac_words,
-                                                        ratio_diac_letters) for s in sentences]):
-                filtered_sentences.add(' '.join(sf))
-            for sf in filtered_sentences:
-                print(sf[:max_chars_count].rstrip(), file=dest_file)
         else:
-            root_p.error('{} is neither a file nor a directory!'.format(source))
-            root_p.exit(-2)
-    print('Finished')
+            print('{} is neither a file nor a directory!'.format(source), file=sys.stderr)
+            sys.exit(-2)
+        print('Preprocessing sentences...')
+        filtered_sentences = set()
+        for i, sf in enumerate(map(lambda s: filter_tokenized_sentence(tokenize(fix_diacritics_errors(s)), min_words,
+                                                                       ratio_diac_words, ratio_diac_letters),
+                                   sentences), 1):
+            if len(sf) > 0:
+                filtered_sentences.add(' '.join(sf))
+            print_progress_bar(i, len(sentences))
+        print(file=sys.stderr)
+        print('Generating file {} ...'.format(destination))
+        for sf in filtered_sentences:
+            print(sf[:max_chars_count].rstrip(), file=dest_file)
+    print('Pre-processing finished successfully.')
 
 
 def partition(dataset_file, train_ratio, val_test_ratio, shuffle_every):
-    # Prepare files for train, validation and test
-    train_path = dataset_file.with_name(dataset_file.stem + '_train.txt')
-    val_path = dataset_file.with_name(dataset_file.stem + '_val.txt')
-    test_path = dataset_file.with_name(dataset_file.stem + '_test.txt')
-    train_path.open('w').close()
-    val_path.open('w').close()
-    test_path.open('w').close()
-    print('Generating sets from', dataset_file)
-    with dataset_file.open('r', encoding='UTF-8') as data_file:
-        sentences = []
-        for line in data_file:
-            sentences.append(line)
-            if len(sentences) % shuffle_every == 0:
-                train_size = round(train_ratio * len(sentences))
-                val_size = round(val_test_ratio * (len(sentences) - train_size))
-                shuffle(sentences)
-                with train_path.open('a', encoding='UTF-8') as train_file:
-                    for s in sentences[:train_size]:
-                        train_file.write(s)
-                with val_path.open('a', encoding='UTF-8') as val_file:
-                    for s in sentences[train_size:train_size + val_size]:
-                        val_file.write(s)
-                with test_path.open('a', encoding='UTF-8') as test_file:
-                    for s in sentences[train_size + val_size:]:
-                        test_file.write(s)
-                print('{} sentences written'.format(len(sentences)))
-                sentences.clear()
+
+    def write_train_val_test_parts(train_path, val_path, test_path, sentences):
         train_size = round(train_ratio * len(sentences))
         val_size = round(val_test_ratio * (len(sentences) - train_size))
-        shuffle(sentences)
+        random.shuffle(sentences)
         with train_path.open('a', encoding='UTF-8') as train_file:
             for s in sentences[:train_size]:
                 train_file.write(s)
@@ -77,8 +61,26 @@ def partition(dataset_file, train_ratio, val_test_ratio, shuffle_every):
         with test_path.open('a', encoding='UTF-8') as test_file:
             for s in sentences[train_size + val_size:]:
                 test_file.write(s)
+
+    # Prepare files for train, validation and test
+    train_path = dataset_file.with_name(dataset_file.stem + '_train.txt')
+    val_path = dataset_file.with_name(dataset_file.stem + '_val.txt')
+    test_path = dataset_file.with_name(dataset_file.stem + '_test.txt')
+    train_path.open('w').close()
+    val_path.open('w').close()
+    test_path.open('w').close()
+    print('Generating sets from {} ...'.format(dataset_file))
+    with dataset_file.open('r', encoding='UTF-8') as data_file:
+        sentences = []
+        for line in data_file:
+            sentences.append(line)
+            if len(sentences) % shuffle_every == 0:
+                write_train_val_test_parts(train_path, val_path, test_path, sentences)
+                print('{} sentences written.'.format(len(sentences)))
+                sentences.clear()
+        write_train_val_test_parts(train_path, val_path, test_path, sentences)
         print('{} sentences written'.format(len(sentences)))
-    print('Finished')
+    print('Partitioning finished successfully.')
 
 
 def train(train_data_path, val_data_path, iterations, weights_dir, early_stop):
@@ -185,14 +187,16 @@ if __name__ == '__main__':
 
     from dataset_preprocessing import read_text_file, filter_tokenized_sentence, tokenize, fix_diacritics_errors
 
-    root_p = ArgumentParser(description='Program allowing to process diacritized datasets, training, testing and diacritizing.')
+    root_p = ArgumentParser(description='Program allowing to process diacritized datasets, training, testing and '
+                                        'diacritizing.')
     subparsers = root_p.add_subparsers(title='Commands', description='Available operations')
-    preprocessing_p = subparsers.add_parser('process',
+    preprocessing_p = subparsers.add_parser('preprocess',
                                             help='Transform Arabic raw text files to a preprocessed dataset by '
                                                  'splitting sentences, dropping punctuation and noise, normalizing '
-                                                 'spaces and numbers, then keeping only the highly diacritized sentences.')
-    preprocessing_p.add_argument('source', type=Path, help='Path of a raw text file or a folder containing the text '
-                                                           'files.')
+                                                 'spaces and numbers, then keeping only the highly diacritized '
+                                                 'sentences.')
+    preprocessing_p.add_argument('source', type=Path,
+                                 help='Path of a raw text file or a folder containing the text files.')
     preprocessing_p.add_argument('destination', type=Path, help='Path of the generated text file after processing.')
     preprocessing_p.add_argument('--min-words', '-w', type=int, default=2,
                                  help='Minimum number of arabic words that must be left in the cleaned sentence in '
@@ -208,9 +212,9 @@ if __name__ == '__main__':
     partition_p = subparsers.add_parser('partition', help='Divide a dataset to train, validation and test fragments.')
     partition_p.add_argument('dataset_file', type=Path, help='The preprocessed dataset file.')
     partition_p.add_argument('--train-ratio', '-t', type=float, default=0.9, help='Ratio of data for training.')
-    partition_p.add_argument('--val-test-ratio', '-v', type=float, default=0.5, help='Split ratio between validation '
-                                                                                     'and test data.')
-    partition_p.add_argument('--shuffle-every', '-s', type=int, default=1000,
+    partition_p.add_argument('--val-test-ratio', '-v', type=float, default=0.5,
+                             help='Split ratio between validation and test data.')
+    partition_p.add_argument('--shuffle-every', '-s', type=int, default=100000,
                              help='Number of sentences to accumulate before shuffling.')
     train_parser = subparsers.add_parser('train', help='Launch the training of a model.')
     train_parser.add_argument('--train-data', '-t', type=Path, required=True, help='Training dataset.')
@@ -221,7 +225,18 @@ if __name__ == '__main__':
                               help='Directory containing the weights file for the model.')
     train_parser.add_argument('--early-stop', '-e', type=int, default=3,
                               help='Maximum number of tries to add when the model performances does not improve.')
-    test_parser = subparsers.add_parser('test', help='Test a pretrained model.')
+    test_diacritize_parent = ArgumentParser(add_help=False)
+    test_diacritize_parent.add_argument('--disable-rules', dest='rules', action='store_false',
+                                        help='Do not use the rules.')
+    test_diacritize_parent.add_argument('--disable-trigrams', dest='trigrams', action='store_false',
+                                        help='Do not load the trigrams.')
+    test_diacritize_parent.add_argument('--disable-bigrams', dest='bigrams', action='store_false',
+                                        help='Do not load the bigrams.')
+    test_diacritize_parent.add_argument('--disable-unigrams', dest='unigrams', action='store_false',
+                                        help='Do not load the unigrams.')
+    test_diacritize_parent.add_argument('--disable-patterns', dest='patterns', action='store_false',
+                                        help='Do not load the patterns.')
+    test_parser = subparsers.add_parser('test', help='Test a pretrained model.', parents=[test_diacritize_parent])
     test_parser.add_argument('test_data', type=Path, help='Test dataset.')
     test_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
                              help='Directory containing the weights file for the model.')
@@ -229,30 +244,13 @@ if __name__ == '__main__':
                              help='Include the non-Arabic symbols in the calculation of the metrics')
     test_parser.add_argument('--ignore-no-diacritics', '-n', action='store_false', dest='no_diacritic',
                              help='Include the non-Arabic symbols in the calculation of the metrics')
-    test_parser.add_argument('--disable-rules', dest='rules', action='store_false', help='Do not use the rules.')
-    test_parser.add_argument('--disable-trigrams', dest='trigrams', action='store_false',
-                             help='Do not load the trigrams.')
-    test_parser.add_argument('--disable-bigrams', dest='bigrams', action='store_false', help='Do not load the bigrams.')
-    test_parser.add_argument('--disable-unigrams', dest='unigrams', action='store_false',
-                             help='Do not load the unigrams.')
-    test_parser.add_argument('--disable-patterns', dest='patterns', action='store_false',
-                             help='Do not load the patterns.')
-    diacritize_parser = subparsers.add_parser('diacritize', help='Restore the diacritics of the Arabic letters in a'
-                                                                 'text.')
+    diacritize_parser = subparsers.add_parser('diacritize', parents=[test_diacritize_parent],
+                                              help='Restore the diacritics of the Arabic letters in a text.')
     diacritize_parser.add_argument('text_file', type=Path, help='A text file with an undiacritized Arabic text.')
     diacritize_parser.add_argument('--output-file', '-o', type=FileType('wt', encoding='UTF-8'), default=sys.stdout,
                                    help='The output file for the results.')
     diacritize_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
                                    help='Directory containing the weights file for the model.')
-    diacritize_parser.add_argument('--disable-rules', dest='rules', action='store_false', help='Do not use the rules.')
-    diacritize_parser.add_argument('--disable-trigrams', dest='trigrams', action='store_false',
-                                   help='Do not load the trigrams.')
-    diacritize_parser.add_argument('--disable-bigrams', dest='bigrams', action='store_false',
-                                   help='Do not load the bigrams.')
-    diacritize_parser.add_argument('--disable-unigrams', dest='unigrams', action='store_false',
-                                   help='Do not load the unigrams.')
-    diacritize_parser.add_argument('--disable-patterns', dest='patterns', action='store_false',
-                                   help='Do not load the patterns.')
     stat_parser = subparsers.add_parser('stat', help='Calculate some statistics about a dataset.')
     stat_parser.add_argument('dataset_text_file', type=Path, help='The file path of the dataset.')
     args = root_p.parse_args()
@@ -260,8 +258,8 @@ if __name__ == '__main__':
         root_p.print_help(sys.stderr)
         root_p.exit(-1)
     if 'source' in vars(args):
-        process(args.source, args.destination, args.min_words, args.min_diac_words_ratio, args.max_chars_count,
-                args.min_diac_letters_ratio)
+        preprocess(args.source, args.destination, args.min_words, args.min_diac_words_ratio, args.max_chars_count,
+                   args.min_diac_letters_ratio)
     elif 'dataset_file' in vars(args):
         partition(args.dataset_file, args.train_ratio, args.val_test_ratio, args.shuffle_every)
     elif 'train_data' in vars(args):

@@ -16,7 +16,7 @@ ARABIC_SYMBOLS = ARABIC_LETTERS | ARABIC_DIACRITICS
 EXTRA_SUKUN_REGEXP = re.compile(r'(?<=ال)' + NAME2DIACRITIC['Sukun'])
 # YA_REGEXP = re.compile(r'ى(?=['+''.join(ARABIC_DIACRITICS)+r'])')
 DIACRITIC_SHADDA_REGEXP = re.compile('(['+''.join(ARABIC_DIACRITICS)+'])('+NAME2DIACRITIC['Shadda']+')')
-XML_TAG = r'(?:<.+>)+'
+XML_TAG = r'(?:<.+?>)'
 SENTENCE_SEPARATORS = ';,،؛.:؟!'
 SPACES = ' \t'
 PUNCTUATION = SENTENCE_SEPARATORS + '۩﴿﴾«»ـ' +\
@@ -26,9 +26,9 @@ PUNCTUATION = SENTENCE_SEPARATORS + '۩﴿﴾«»ـ' +\
 DATETIME_REGEXP = re.compile(r'(?:\d+[-/:\s]+)+\d+')
 NUMBER_REGEXP = re.compile(r'\d+(?:\.\d+)?')
 ZERO_REGEXP = re.compile(r'\b0\b')
-DOTS_NO_URL = r'(?<!\w)(['+SENTENCE_SEPARATORS+']+)(?!\w)'
-WORD_TOKENIZATION_REGEXP = re.compile('((?:[' + ''.join(ARABIC_LETTERS) + ']['+''.join(ARABIC_DIACRITICS)+']*)+|\d+(?:\.\d+)?)')
-SENTENCE_TOKENIZATION_REGEXP = re.compile(DOTS_NO_URL + '|' + XML_TAG)
+WORD_TOKENIZATION_REGEXP = re.compile(
+    '((?:[' + ''.join(ARABIC_LETTERS) + ']['+''.join(ARABIC_DIACRITICS)+r']*)+|\d+(?:\.\d+)?)')
+SENTENCE_TOKENIZATION_REGEXP = re.compile(r'([' + SENTENCE_SEPARATORS + r'])(?!\w)|' + XML_TAG)
 CHAR2INDEX = dict((l, n) for n, l in enumerate(sorted(ARABIC_LETTERS)))
 CHAR2INDEX.update(dict((v, k) for k, v in enumerate([' ', '0'], len(CHAR2INDEX))))
 INDEX2CHAR = dict((v, k) for k, v in CHAR2INDEX.items())
