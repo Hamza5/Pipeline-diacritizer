@@ -1,9 +1,10 @@
 #!/usr/bin/python3
 import os
 import random
+from itertools import chain
 
 from dataset_preprocessing import WORD_TOKENIZATION_REGEXP, NUMBER_REGEXP, extract_diacritics, clear_diacritics, \
-    ARABIC_DIACRITICS, ARABIC_LETTERS, SENTENCE_TOKENIZATION_REGEXP, SPACES
+    ARABIC_DIACRITICS, ARABIC_LETTERS, SENTENCE_TOKENIZATION_REGEXP, SPACES, ARABIC_SYMBOLS
 from diacritization_model import DiacritizationModel
 
 
@@ -179,6 +180,25 @@ def stat(file_path):
     print('-'*35)
 
 
+def oov_count(train_set_path, test_set_path):
+    assert isinstance(train_set_path, Path)
+    assert isinstance(test_set_path, Path)
+    with train_set_path.open(encoding='UTF-8') as train_set_file:
+        train_set_sentences = list(map(str.split, train_set_file.readlines()))
+    train_set_d_words = set(filter(lambda w: set(w).issubset(ARABIC_SYMBOLS), chain(*train_set_sentences)))
+    with test_set_path.open(encoding='UTF-8') as test_set_file:
+        test_set_sentences = list(map(str.split, test_set_file.readlines()))
+    test_set_d_words = set(filter(lambda w: set(w).issubset(ARABIC_SYMBOLS), chain(*test_set_sentences)))
+    diacritized_words_oov = test_set_d_words - train_set_d_words
+    train_set_u_words = set(map(clear_diacritics, train_set_d_words))
+    test_set_u_words = set(map(clear_diacritics, test_set_d_words))
+    u_words_oov = test_set_u_words - train_set_u_words
+    print('Diacritized OoV Arabic words: {}/{} ({:.2%})'.format(len(diacritized_words_oov), len(test_set_d_words),
+                                                                len(diacritized_words_oov) / len(test_set_d_words)))
+    print('Undiacritized OoV Arabic words: {}/{} ({:.2%})'.format(len(u_words_oov), len(test_set_u_words),
+                                                                  len(u_words_oov) / len(test_set_u_words)))
+
+
 if __name__ == '__main__':
 
     import sys
@@ -253,6 +273,9 @@ if __name__ == '__main__':
                                    help='Directory containing the weights file for the model.')
     stat_parser = subparsers.add_parser('stat', help='Calculate some statistics about a dataset.')
     stat_parser.add_argument('dataset_text_file', type=Path, help='The file path of the dataset.')
+    oov_parser = subparsers.add_parser('oov', help='Calculate the ratio of OoV words in a test set.')
+    oov_parser.add_argument('train_set', type=Path, help='The file path of the training set.')
+    oov_parser.add_argument('test_set', type=Path, help='The file path of the test/val set.')
     args = root_p.parse_args()
     if not vars(args):
         root_p.print_help(sys.stderr)
@@ -272,3 +295,5 @@ if __name__ == '__main__':
                    args.unigrams, args.patterns)
     elif 'dataset_text_file' in vars(args):
         stat(args.dataset_text_file)
+    elif 'train_set' in vars(args):
+        oov_count(args.train_set, args.test_set)
