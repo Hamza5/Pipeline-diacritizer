@@ -12,7 +12,7 @@ import numpy as np
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.callbacks import ModelCheckpoint, LambdaCallback, EarlyStopping, TerminateOnNaN
-from tensorflow.keras.layers import LSTM, Dense, Conv1D, Flatten, Bidirectional, Input, Layer, Lambda
+from tensorflow.keras.layers import LSTM, Dense, Flatten, Bidirectional, Input, Layer, Lambda
 from tensorflow.keras.metrics import binary_accuracy, categorical_accuracy
 from tensorflow.keras.optimizers import Adadelta
 from tensorflow.keras.utils import Sequence, to_categorical
@@ -69,7 +69,6 @@ class DiacritizationModel:
         self.inner_layers = [
             Bidirectional(LSTM(64, return_sequences=True, unroll=True, dropout=0.1), name='L1'),
             Bidirectional(LSTM(64, return_sequences=True, unroll=True, dropout=0.1), name='L2'),
-            Conv1D(128, 3, activation='tanh', padding='valid', name='C'),
             Flatten(name='F'),
             (Dense(8, activation='tanh', name='D1'), Dense(64, activation='tanh', name='D2'))
         ]
@@ -89,10 +88,10 @@ class DiacritizationModel:
         )
         self.model = Model(inputs=self.input_layer,
                            outputs=[self.shadda_corrections_layer, self.haraka_corrections_layer])
-        self.model.compile(self.OPTIMIZER,
-                           {'output_haraka': 'categorical_crossentropy', 'output_shadda': 'binary_crossentropy'},
-                           {'output_haraka': [categorical_accuracy, precision, recall],
-                            'output_shadda': [binary_accuracy, precision, recall]})
+        self.model.compile(optimizer=self.OPTIMIZER,
+                           loss={'output_haraka': 'categorical_crossentropy', 'output_shadda': 'binary_crossentropy'},
+                           metrics={'output_haraka': [categorical_accuracy, precision, recall],
+                                    'output_shadda': [binary_accuracy, precision, recall]})
         self.values_history = dict((k, []) for k in self.model.metrics_names + ['val_'+x for x in
                                                                                 self.model.metrics_names])
         if os.path.isfile(self.get_history_file_path()):
