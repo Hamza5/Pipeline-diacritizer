@@ -17,8 +17,8 @@ from tensorflow.keras.metrics import binary_accuracy, categorical_accuracy
 from tensorflow.keras.optimizers import Adadelta
 from tensorflow.keras.utils import Sequence, to_categorical
 
-from dataset_preprocessing import NAME2DIACRITIC, CHAR2INDEX, extract_diacritics_2, clear_diacritics, add_time_steps, \
-    NUMBER_REGEXP, WORD_TOKENIZATION_REGEXP, ZERO_REGEXP, ARABIC_LETTERS
+from pipeline_diacritizer.dataset_preprocessing import NAME2DIACRITIC, CHAR2INDEX, extract_diacritics_2, \
+    clear_diacritics, add_time_steps, NUMBER_REGEXP, WORD_TOKENIZATION_REGEXP, ZERO_REGEXP, ARABIC_LETTERS
 
 
 def precision(y_true, y_pred):

@@ -1,11 +1,18 @@
 #!/usr/bin/python3
 import os
+import sys
 import random
 from itertools import chain
+from pathlib import Path
+from argparse import ArgumentParser, FileType
+from pkg_resources import resource_filename
 
-from dataset_preprocessing import WORD_TOKENIZATION_REGEXP, NUMBER_REGEXP, extract_diacritics, clear_diacritics, \
-    ARABIC_DIACRITICS, ARABIC_LETTERS, SENTENCE_TOKENIZATION_REGEXP, SPACES, ARABIC_SYMBOLS
-from diacritization_model import DiacritizationModel
+from pipeline_diacritizer.dataset_preprocessing import WORD_TOKENIZATION_REGEXP, NUMBER_REGEXP, extract_diacritics,\
+    clear_diacritics, ARABIC_DIACRITICS, ARABIC_LETTERS, SENTENCE_TOKENIZATION_REGEXP, SPACES, ARABIC_SYMBOLS,\
+    read_text_file, filter_tokenized_sentence, tokenize, fix_diacritics_errors
+from pipeline_diacritizer.diacritization_model import DiacritizationModel
+
+PARAMS_DIR = 'Tashkeela_params'
 
 
 def print_progress_bar(current, maximum):
@@ -199,14 +206,7 @@ def oov_count(train_set_path, test_set_path):
                                                                   len(u_words_oov) / len(test_set_u_words)))
 
 
-if __name__ == '__main__':
-
-    import sys
-    from pathlib import Path
-    from argparse import ArgumentParser, FileType
-
-    from dataset_preprocessing import read_text_file, filter_tokenized_sentence, tokenize, fix_diacritics_errors
-
+def main():
     root_p = ArgumentParser(description='Program allowing to process diacritized datasets, training, testing and '
                                         'diacritizing.')
     subparsers = root_p.add_subparsers(title='Commands', description='Available operations')
@@ -241,7 +241,8 @@ if __name__ == '__main__':
     train_parser.add_argument('--val-data', '-v', type=Path, required=True, help='Validation dataset.')
     train_parser.add_argument('--iterations', '-i', type=int, default=15,
                               help='Maximum number of iterations for training.')
-    train_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
+    train_parser.add_argument('--weights-dir', '-w', type=Path,
+                              default=resource_filename(__package__, PARAMS_DIR),
                               help='Directory containing the weights file for the model.')
     train_parser.add_argument('--early-stop', '-e', type=int, default=3,
                               help='Maximum number of tries to add when the model performances does not improve.')
@@ -256,10 +257,11 @@ if __name__ == '__main__':
                                         help='Do not load the unigrams.')
     test_diacritize_parent.add_argument('--disable-patterns', dest='patterns', action='store_false',
                                         help='Do not load the patterns.')
+    test_diacritize_parent.add_argument('--weights-dir', '-w', type=Path,
+                                        default=resource_filename(__package__, PARAMS_DIR),
+                                        help='Directory containing the weights file for the model.')
     test_parser = subparsers.add_parser('test', help='Test a pretrained model.', parents=[test_diacritize_parent])
     test_parser.add_argument('test_data', type=Path, help='Test dataset.')
-    test_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
-                             help='Directory containing the weights file for the model.')
     test_parser.add_argument('--all-characters', '-a', action='store_false', dest='arabic_only',
                              help='Include the non-Arabic symbols in the calculation of the metrics')
     test_parser.add_argument('--ignore-no-diacritics', '-n', action='store_false', dest='no_diacritic',
@@ -269,8 +271,6 @@ if __name__ == '__main__':
     diacritize_parser.add_argument('text_file', type=Path, help='A text file with an undiacritized Arabic text.')
     diacritize_parser.add_argument('--output-file', '-o', type=FileType('wt', encoding='UTF-8'), default=sys.stdout,
                                    help='The output file for the results.')
-    diacritize_parser.add_argument('--weights-dir', '-w', type=Path, default=Path.cwd(),
-                                   help='Directory containing the weights file for the model.')
     stat_parser = subparsers.add_parser('stat', help='Calculate some statistics about a dataset.')
     stat_parser.add_argument('dataset_text_file', type=Path, help='The file path of the dataset.')
     oov_parser = subparsers.add_parser('oov', help='Calculate the ratio of OoV words in a test set.')
