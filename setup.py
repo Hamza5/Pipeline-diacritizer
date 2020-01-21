@@ -5,7 +5,7 @@ with open('README.md') as readme_file:
 
 setuptools.setup(
     name='pipeline_diacritizer',
-    version='1.0.0',
+    version='1.0.1',
     author='Hamza Abbad',
     author_email='hamza.abbad@whut.edu.cn',
     description='Command-line application to automatically restore the diacritics of an Arabic text.',
