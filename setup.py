@@ -5,7 +5,7 @@ with open('README.md') as readme_file:
 
 setuptools.setup(
     name='pipeline_diacritizer',
-    version='1.0.0rc4',
+    version='1.0.0',
     author='Hamza Abbad',
     author_email='hamza.abbad@whut.edu.cn',
     description='Command-line application to automatically restore the diacritics of an Arabic text.',
@@ -24,7 +24,6 @@ setuptools.setup(
         'Topic :: Text Processing :: Linguistic'
     ],
     entry_points={'console_scripts': ['pipeline_diacritizer = pipeline_diacritizer.pipeline_diacritizer:main']},
-    # package_data={'': ['Tashkeela_params/*']},
     install_requires=['tensorflow<=1.14.0,>=1.11.0', 'numpy<=1.16.5,>=1.13.0'],
     python_requires='>=3.4,<3.8'
 )
