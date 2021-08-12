@@ -1,5 +1,11 @@
 # Multi-components system for automatic Arabic diacritics restoration
 
+<div>
+<b>Warning:</b> This project has been deprecated due to its bad design and problems.
+This repository is only left because it has been referenced from the corresponding paper.
+For a better and newer project, check <a href="https://github.com/Hamza5/multilevel-diacritizer">Multilevel Diacritizer</a>.
+</div>
+
 ## About
 
 This tool is a command-line application written in Python 3 that automatically add diacritics to
